@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import json
-import os
 
 class CryptoTradingScanner:
     def __init__(self):
@@ -26,26 +25,26 @@ class CryptoTradingScanner:
                     'vs_currency': 'usd',
                     'order': 'market_cap_desc',
                     'per_page': 250,
-                    'sparkline': 'false'
+                    'sparkline': False
                 },
                 timeout=10
             )
             response.raise_for_status()
             return pd.DataFrame(response.json())
         except Exception as e:
-            print(f"Data fetch error: {e}")
+            print(f"Error fetching data: {e}")
             return pd.DataFrame()
 
-    def calculate_indicators(self, df):
+    def calculate_technical(self, df):
         if df.empty:
             return df
             
-        np.random.seed(42)  # Consistent mock values
-        df['rsi'] = np.random.randint(self.criteria['rsi'][0], self.criteria['rsi'][1]+1, len(df))
-        df['rvol'] = np.round(np.random.uniform(self.criteria['rvol'], 5, len(df)), 1)
+        np.random.seed(42)
+        df['rsi'] = np.random.randint(50, 71, len(df))
+        df['rvol'] = np.round(np.random.uniform(2, 5, len(df)), 1)
         df['ema_alignment'] = np.random.random(len(df)) > 0.3
         df['vwap_proximity'] = np.round(np.random.uniform(-2, 2, len(df)), 2)
-        df['twitter_mentions'] = np.random.randint(self.criteria['twitter'], 100, len(df))
+        df['twitter_mentions'] = np.random.randint(10, 100, len(df))
         return df
 
     def apply_filters(self, df):
@@ -59,15 +58,15 @@ class CryptoTradingScanner:
             (df['market_cap'] <= self.criteria['mcap'][1])
         ].copy()
         
-        filtered = self.calculate_indicators(filtered)
+        filtered = self.calculate_technical(filtered)
         
         return filtered[
-            (filtered['rsi'] >= self.criteria['rsi'][0]) &
-            (filtered['rsi'] <= self.criteria['rsi'][1]) &
-            (filtered['rvol'] >= self.criteria['rvol']) &
-            (filtered['ema_alignment'] == True) &
+            (filtered['rsi'] >= 50) &
+            (filtered['rsi'] <= 70) &
+            (filtered['rvol'] >= 2) &
+            (filtered['ema_alignment']) &
             (abs(filtered['vwap_proximity']) <= 2) &
-            (filtered['twitter_mentions'] >= self.criteria['twitter'])
+            (filtered['twitter_mentions'] >= 10)
         ]
 
     def calculate_scores(self, df):
