@@ -1,18 +1,9 @@
 class CryptoDashboard {
     constructor() {
-        this.dataUrls = {
-            results: 'data/scan_results.json',
-            update: 'data/last_update.txt'
-        };
+        this.dataUrl = 'data/scan_results.json';
+        this.lastUpdateUrl = 'data/last_update.txt';
         this.cacheBuster = `t=${Date.now()}`;
-        this.scanData = null;
         
-        this.initElements();
-        this.initEventListeners();
-        this.loadData();
-    }
-
-    initElements() {
         this.elements = {
             lastUpdate: document.getElementById('last-update'),
             resultsContainer: document.getElementById('results-container'),
@@ -21,6 +12,9 @@ class CryptoDashboard {
             loadingIndicator: document.getElementById('loading-indicator'),
             toast: document.getElementById('refresh-toast')
         };
+        
+        this.initEventListeners();
+        this.loadData();
     }
 
     initEventListeners() {
@@ -28,16 +22,16 @@ class CryptoDashboard {
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
     }
 
-    async fetchWithRetry(url, options = {}, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-            try {
-                const response = await fetch(url, options);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                if (i === retries - 1) throw error;
-                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    async fetchData(url) {
+        try {
+            const response = await fetch(`${url}?${this.cacheBuster}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
+            return await response.json();
+        } catch (error) {
+            console.error(`Failed to fetch ${url}:`, error);
+            throw error;
         }
     }
 
@@ -46,8 +40,8 @@ class CryptoDashboard {
             this.showLoading();
             
             const [data, update] = await Promise.all([
-                this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
-                this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
+                this.fetchData(this.dataUrl),
+                this.fetchData(this.lastUpdateUrl)
             ]);
             
             this.scanData = data;
@@ -66,6 +60,7 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
+            // Force fresh reload
             this.cacheBuster = `force_refresh=${Date.now()}`;
             await this.loadData();
             
@@ -163,127 +158,6 @@ class CryptoDashboard {
                 </td>
             </tr>
         `;
-    }
-
-    showDetails(coinId) {
-        const coin = this.scanData.find(item => item.id === coinId);
-        if (!coin) return;
-        
-        const modalHtml = `
-            <div class="modal fade" id="coinModal" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-lg">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">
-                                <img src="${coin.image}" width="32" height="32" 
-                                     onerror="this.src='https://via.placeholder.com/32'">
-                                ${coin.name} (${coin.symbol})
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="card mb-3">
-                                        <div class="card-header">Technical Indicators</div>
-                                        <div class="card-body">
-                                            <ul class="list-group list-group-flush">
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>RSI:</span>
-                                                    <span class="${coin.rsi > 70 ? 'text-danger' : coin.rsi < 30 ? 'text-success' : ''}">
-                                                        ${coin.rsi}
-                                                    </span>
-                                                </li>
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>Relative Volume:</span>
-                                                    <span>${coin.rvol}x</span>
-                                                </li>
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>EMA Alignment:</span>
-                                                    <span class="${coin.ema_alignment ? 'text-success' : 'text-warning'}">
-                                                        ${coin.ema_alignment ? 'Aligned' : 'Not Aligned'}
-                                                    </span>
-                                                </li>
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>VWAP Proximity:</span>
-                                                    <span>${coin.vwap_proximity}%</span>
-                                                </li>
-                                            </ul>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="card mb-3">
-                                        <div class="card-header">Risk Management</div>
-                                        <div class="card-body">
-                                            <ul class="list-group list-group-flush">
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>Stop Loss:</span>
-                                                    <span>$${coin.risk.stop_loss}</span>
-                                                </li>
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>Take Profit:</span>
-                                                    <span>$${coin.risk.take_profit}</span>
-                                                </li>
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>Position Size:</span>
-                                                    <span>${coin.risk.position_size}%</span>
-                                                </li>
-                                                <li class="list-group-item d-flex justify-content-between">
-                                                    <span>Risk/Reward:</span>
-                                                    <span>1:${coin.risk.risk_reward}</span>
-                                                </li>
-                                            </ul>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-12">
-                                    <div class="card">
-                                        <div class="card-header">Market Sentiment</div>
-                                        <div class="card-body">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <div>
-                                                    <span class="me-3">News Sentiment: ${coin.news_sentiment}/1.0</span>
-                                                    <div class="progress" style="width: 200px; height: 20px;">
-                                                        <div class="progress-bar bg-success" 
-                                                             style="width: ${coin.news_sentiment * 100}%"></div>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <span class="me-3">Twitter Mentions: ${coin.twitter_mentions}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <a href="${coin.tradingview_url}" target="_blank" class="btn btn-primary">
-                                <i class="fas fa-chart-line"></i> TradingView
-                            </a>
-                            <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-newspaper"></i> Latest News
-                            </a>
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        const modalContainer = document.createElement('div');
-        modalContainer.innerHTML = modalHtml;
-        document.body.appendChild(modalContainer);
-        
-        const modal = new bootstrap.Modal(document.getElementById('coinModal'));
-        modal.show();
-        
-        document.getElementById('coinModal').addEventListener('hidden.bs.modal', () => {
-            modalContainer.remove();
-        });
     }
 
     updateLastUpdated(timestamp) {
