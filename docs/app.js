@@ -1,73 +1,138 @@
-class CryptoScanner {
+class CryptoDashboard {
     constructor() {
-        this.dataUrl = 'scan_results.json';  // Now in same directory
-        this.resultsBody = document.getElementById('results-body');
-        this.lastUpdated = document.getElementById('last-updated');
-        document.getElementById('refresh-btn').addEventListener('click', () => this.loadData());
+        this.dataUrl = 'data/scan_results.json';
+        this.lastUpdateElement = document.getElementById('last-update');
+        this.resultsContainer = document.getElementById('results-container');
+        this.filterSelect = document.getElementById('filter-select');
+        this.refreshBtn = document.getElementById('refresh-btn');
+        
+        this.initEventListeners();
         this.loadData();
     }
 
-    async loadData() {
+    initEventListeners() {
+        this.refreshBtn.addEventListener('click', () => this.loadData(true));
+        this.filterSelect.addEventListener('change', () => this.displayResults());
+    }
+
+    async loadData(forceRefresh = false) {
         try {
-            const response = await fetch(this.dataUrl + '?t=' + Date.now());
-            if (!response.ok) throw new Error('Network response was not ok');
+            this.showLoading();
             
-            const data = await response.json();
-            this.displayResults(data);
+            const url = forceRefresh 
+                ? `${this.dataUrl}?t=${Date.now()}` 
+                : this.dataUrl;
             
-            // Update last updated time
-            if (data.length > 0) {
-                const timestamp = new Date(data[0].timestamp);
-                this.lastUpdated.textContent = timestamp.toLocaleString();
-            }
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            this.scanData = await response.json();
+            this.displayResults();
+            this.updateLastUpdated();
         } catch (error) {
-            console.error('Error loading data:', error);
-            this.resultsBody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center text-danger">
-                        Failed to load data. Please try again later.
-                    </td>
-                </tr>
-            `;
+            console.error('Failed to load data:', error);
+            this.showError();
         }
     }
 
-    displayResults(data) {
-        if (!data || data.length === 0) {
-            this.resultsBody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center text-muted">
-                        No cryptocurrencies match the current criteria
-                    </td>
-                </tr>
+    displayResults() {
+        if (!this.scanData || this.scanData.length === 0) {
+            this.resultsContainer.innerHTML = `
+                <div class="alert alert-warning">
+                    No cryptocurrencies match the current criteria
+                </div>
             `;
             return;
         }
 
-        this.resultsBody.innerHTML = data.map(item => `
+        const filter = this.filterSelect.value;
+        let filteredData = [...this.scanData];
+        
+        if (filter === 'high') {
+            filteredData = filteredData.filter(item => item.ai_score >= 7);
+        } else if (filter === 'medium') {
+            filteredData = filteredData.filter(item => item.ai_score >= 4 && item.ai_score < 7);
+        }
+
+        if (filteredData.length === 0) {
+            this.resultsContainer.innerHTML = `
+                <div class="alert alert-info">
+                    No results match the selected filter
+                </div>
+            `;
+            return;
+        }
+
+        this.resultsContainer.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Coin</th>
+                            <th>Price</th>
+                            <th>24h Change</th>
+                            <th>Volume</th>
+                            <th>AI Score</th>
+                            <th>RSI</th>
+                            <th>RVOL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filteredData.map(item => this.createTableRow(item)).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    createTableRow(item) {
+        const changeClass = item.price_change_percentage_24h >= 0 ? 'positive' : 'negative';
+        const scoreClass = item.ai_score >= 7 ? 'high' : item.ai_score >= 4 ? 'medium' : 'low';
+        const imageUrl = item.image || 'https://via.placeholder.com/20';
+
+        return `
             <tr>
-                <td>
-                    <img src="${item.image}" width="20" height="20" 
-                         onerror="this.src='https://via.placeholder.com/20'" 
-                         alt="${item.name}">
+                <td class="ticker-cell">
+                    <img src="${imageUrl}" width="20" height="20" alt="${item.name}" 
+                         onerror="this.src='https://via.placeholder.com/20'">
                     ${item.symbol.toUpperCase()}
                 </td>
                 <td>$${item.current_price.toFixed(4)}</td>
-                <td class="${item.price_change_percentage_24h >= 0 ? 'text-success' : 'text-danger'}">
-                    ${item.price_change_percentage_24h.toFixed(2)}%
-                </td>
+                <td class="${changeClass}">${item.price_change_percentage_24h.toFixed(2)}%</td>
                 <td>$${(item.total_volume / 1000000).toFixed(2)}M</td>
-                <td>
-                    <span class="badge ${item.ai_score >= 7 ? 'bg-success' : item.ai_score >= 4 ? 'bg-warning' : 'bg-danger'}">
-                        ${item.ai_score}
-                    </span>
-                </td>
+                <td><span class="ai-score ${scoreClass}">${item.ai_score}</span></td>
+                <td>${item.rsi}</td>
+                <td>${item.rvol}x</td>
             </tr>
-        `).join('');
+        `;
+    }
+
+    updateLastUpdated() {
+        if (this.scanData && this.scanData.length > 0) {
+            const lastUpdated = new Date(this.scanData[0].timestamp);
+            this.lastUpdateElement.textContent = lastUpdated.toLocaleString();
+        }
+    }
+
+    showLoading() {
+        this.resultsContainer.innerHTML = `
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Loading scan data...</p>
+            </div>
+        `;
+    }
+
+    showError() {
+        this.resultsContainer.innerHTML = `
+            <div class="alert alert-danger">
+                Failed to load data. Please try again later.
+            </div>
+        `;
     }
 }
 
-// Initialize when page loads
+// Initialize dashboard when page loads
 document.addEventListener('DOMContentLoaded', () => {
-    new CryptoScanner();
+    new CryptoDashboard();
 });
