@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: '*/10 * * * *'  # Every 10 minutes
   workflow_dispatch:  # Manual trigger
+  push:
+    branches: [ main ]
 
 jobs:
   run-scanner:
@@ -19,16 +21,20 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install -r backend/requirements.txt
+          cd backend
+          pip install -r requirements.txt
+          cd ..
       
       - name: Run scanner
         run: |
-          python backend/scanner.py
+          cd backend
+          python scanner.py
+          cd ..
       
       - name: Commit and push results
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git add backend/scan_results.json
-          git commit -m "Update scan results [skip ci]" || echo "No changes to commit"
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update scan results [skip ci]"
           git push
