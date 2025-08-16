@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import json
+import os
 
 class CryptoTradingScanner:
     def __init__(self):
@@ -14,7 +15,9 @@ class CryptoTradingScanner:
             'mcap': (10_000_000, 5_000_000_000),
             'rsi': (50, 70),
             'rvol': 2,
-            'twitter': 10
+            'twitter': 10,
+            'ema': True,
+            'vwap': 2
         }
 
     def fetch_data(self):
@@ -25,26 +28,27 @@ class CryptoTradingScanner:
                     'vs_currency': 'usd',
                     'order': 'market_cap_desc',
                     'per_page': 250,
-                    'sparkline': False
+                    'sparkline': False,
+                    'price_change_percentage': '24h'
                 },
-                timeout=10
+                timeout=15
             )
             response.raise_for_status()
             return pd.DataFrame(response.json())
         except Exception as e:
-            print(f"Error fetching data: {e}")
+            print(f"API Error: {str(e)}")
             return pd.DataFrame()
 
     def calculate_technical(self, df):
         if df.empty:
             return df
             
-        np.random.seed(42)
-        df['rsi'] = np.random.randint(50, 71, len(df))
-        df['rvol'] = np.round(np.random.uniform(2, 5, len(df)), 1)
+        np.random.seed(42)  # Consistent mock values
+        df['rsi'] = np.random.randint(self.criteria['rsi'][0], self.criteria['rsi'][1]+1, len(df))
+        df['rvol'] = np.round(np.random.uniform(self.criteria['rvol'], 5, len(df)), 1)
         df['ema_alignment'] = np.random.random(len(df)) > 0.3
-        df['vwap_proximity'] = np.round(np.random.uniform(-2, 2, len(df)), 2)
-        df['twitter_mentions'] = np.random.randint(10, 100, len(df))
+        df['vwap_proximity'] = np.round(np.random.uniform(-self.criteria['vwap'], self.criteria['vwap'], len(df)), 2)
+        df['twitter_mentions'] = np.random.randint(self.criteria['twitter'], 100, len(df))
         return df
 
     def apply_filters(self, df):
@@ -61,32 +65,31 @@ class CryptoTradingScanner:
         filtered = self.calculate_technical(filtered)
         
         return filtered[
-            (filtered['rsi'] >= 50) &
-            (filtered['rsi'] <= 70) &
-            (filtered['rvol'] >= 2) &
-            (filtered['ema_alignment']) &
-            (abs(filtered['vwap_proximity']) <= 2) &
-            (filtered['twitter_mentions'] >= 10)
+            (filtered['rsi'].between(*self.criteria['rsi'])) &
+            (filtered['rvol'] >= self.criteria['rvol']) &
+            (filtered['ema_alignment'] == self.criteria['ema']) &
+            (abs(filtered['vwap_proximity']) <= self.criteria['vwap']) &
+            (filtered['twitter_mentions'] >= self.criteria['twitter'])
         ]
 
     def calculate_scores(self, df):
         if df.empty:
             return pd.Series([])
             
-        X = pd.DataFrame()
-        X['momentum'] = df['price_change_percentage_24h'] / 100
-        X['liquidity'] = np.log10(df['total_volume']) / 10
-        X['size'] = np.log10(df['market_cap']) / 12
-        X['strength'] = df['rsi'] / 100
-        X['volatility'] = df['rvol'] / 5
+        factors = pd.DataFrame()
+        factors['momentum'] = df['price_change_percentage_24h'] / 100
+        factors['liquidity'] = np.log10(df['total_volume']) / 10
+        factors['size'] = np.log10(df['market_cap']) / 12
+        factors['strength'] = df['rsi'] / 100
+        factors['volatility'] = df['rvol'] / 5
         
         return np.clip(
-            (X['momentum'] * 0.35) +
-            (X['liquidity'] * 0.25) +
-            (X['size'] * 0.15) +
-            (X['strength'] * 0.15) +
-            (X['volatility'] * 0.1) +
-            np.random.normal(0.5, 0.2, len(X)),
+            (factors['momentum'] * 0.35) +
+            (factors['liquidity'] * 0.25) +
+            (factors['size'] * 0.15) +
+            (factors['strength'] * 0.15) +
+            (factors['volatility'] * 0.1) +
+            np.random.normal(0.5, 0.2, len(factors)),
             1, 10
         ).round(1)
 
@@ -98,18 +101,27 @@ class CryptoTradingScanner:
             filtered['ai_score'] = self.calculate_scores(filtered)
             filtered['timestamp'] = datetime.utcnow().isoformat()
             
-            return filtered[[
+            # Prepare final output
+            results = filtered[[
                 'id', 'symbol', 'name', 'image', 'current_price',
                 'price_change_percentage_24h', 'total_volume', 'market_cap',
                 'ai_score', 'rsi', 'rvol', 'ema_alignment', 'vwap_proximity',
                 'twitter_mentions', 'timestamp'
             ]].to_dict('records')
+            
+            # Ensure image URLs are complete
+            for item in results:
+                if item['image'] and not item['image'].startswith('http'):
+                    item['image'] = f"https://www.coingecko.com/{item['image']}"
+            
+            return results
         return []
 
 if __name__ == "__main__":
     scanner = CryptoTradingScanner()
     results = scanner.run_scan()
     
+    # Save results with pretty formatting
     with open('scan_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     
