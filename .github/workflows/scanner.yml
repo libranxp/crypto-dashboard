@@ -36,7 +36,8 @@ jobs:
         run: |
           mkdir -p docs/data
           cp backend/scan_results.json docs/data/
-          echo "Updated scan data" > docs/data/update.txt
+          cp backend/last_update.txt docs/data/
+          echo "Updated at $(date)" > docs/data/update_info.txt
 
       - name: Commit and push changes
         run: |
