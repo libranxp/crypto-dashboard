@@ -45,12 +45,12 @@ class CryptoTradingScanner:
                 response.raise_for_status()
                 data = response.json()
                 
-                # Validate data structure
-                if not isinstance(data, list) or len(data) == 0:
+                if not isinstance(data, list):
                     raise ValueError("Invalid data format from API")
                     
                 return pd.DataFrame(data)
             except Exception as e:
+                print(f"Attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(2 ** attempt)
@@ -61,7 +61,6 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
-        # Use timestamp for random seed to ensure consistency
         np.random.seed(int(datetime.now().timestamp()))
         
         df['rsi'] = np.random.randint(50, 71, len(df))
@@ -124,7 +123,7 @@ class CryptoTradingScanner:
         """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
+        position_size = min(10, row['ai_score'] * 2)
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -138,7 +137,7 @@ class CryptoTradingScanner:
         try:
             df = self.fetch_data()
             if df.empty:
-                print("Warning: No data received from API")
+                print("Error: No data received from API")
                 return []
                 
             filtered = self.apply_filters(df)
@@ -158,7 +157,7 @@ class CryptoTradingScanner:
                     'id': coin_id,
                     'symbol': symbol,
                     'name': row['name'],
-                    'image': self.get_valid_image_url(row['image']),
+                    'image': row['image'] if str(row['image']).startswith('http') else f"https://www.coingecko.com/{row['image']}",
                     'price': round(row['current_price'], 4),
                     'change_24h': round(row['price_change_percentage_24h'], 2),
                     'volume': round(row['total_volume'], 2),
@@ -180,14 +179,6 @@ class CryptoTradingScanner:
         except Exception as e:
             print(f"Error during scan: {str(e)}")
             return []
-
-    def get_valid_image_url(self, img_url):
-        """Ensure we have a valid image URL"""
-        if not img_url:
-            return "https://via.placeholder.com/64"
-        if img_url.startswith('http'):
-            return img_url
-        return f"https://www.coingecko.com/{img_url}"
 
 if __name__ == "__main__":
     scanner = CryptoTradingScanner()
