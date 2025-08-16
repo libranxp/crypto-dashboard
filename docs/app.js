@@ -7,17 +7,20 @@ class CryptoDashboard {
         this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
         
-        // Initialize elements
+        this.initElements();
+        this.initEventListeners();
+        this.loadData();
+    }
+
+    initElements() {
         this.elements = {
             lastUpdate: document.getElementById('last-update'),
             resultsContainer: document.getElementById('results-container'),
             filterSelect: document.getElementById('filter-select'),
             refreshBtn: document.getElementById('refresh-btn'),
-            loadingIndicator: document.getElementById('loading-indicator')
+            loadingIndicator: document.getElementById('loading-indicator'),
+            toast: document.getElementById('refresh-toast')
         };
-        
-        this.initEventListeners();
-        this.loadData();
     }
 
     initEventListeners() {
@@ -25,18 +28,16 @@ class CryptoDashboard {
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
     }
 
-    async fetchWithTimeout(url, timeout = 10000) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-        
-        try {
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            return await response.json();
-        } catch (error) {
-            console.error(`Fetch failed for ${url}:`, error);
-            throw error;
+    async fetchWithRetry(url, options = {}, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                if (i === retries - 1) throw error;
+                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            }
         }
     }
 
@@ -44,10 +45,9 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // Fetch both data and update time in parallel
             const [data, update] = await Promise.all([
-                this.fetchWithTimeout(`${this.dataUrls.results}?${this.cacheBuster}`),
-                this.fetchWithTimeout(`${this.dataUrls.update}?${this.cacheBuster}`)
+                this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
+                this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
             ]);
             
             this.scanData = data;
@@ -66,12 +66,11 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh reload by using new cache buster
             this.cacheBuster = `force_refresh=${Date.now()}`;
             await this.loadData();
             
-            // Show success feedback
-            const toast = new bootstrap.Toast(document.getElementById('refresh-toast'));
+            // Show success toast
+            const toast = new bootstrap.Toast(this.elements.toast);
             toast.show();
         } catch (error) {
             console.error('Refresh failed:', error);
@@ -142,7 +141,7 @@ class CryptoDashboard {
                     <img src="${item.image}" width="24" height="24" 
                          onerror="this.src='https://via.placeholder.com/24'" 
                          alt="${item.name}">
-                    <span>${item.symbol.toUpperCase()}</span>
+                    <span>${item.symbol}</span>
                 </td>
                 <td>$${item.price}</td>
                 <td class="${changeClass}">${item.change_24h}%</td>
@@ -178,7 +177,7 @@ class CryptoDashboard {
                             <h5 class="modal-title">
                                 <img src="${coin.image}" width="32" height="32" 
                                      onerror="this.src='https://via.placeholder.com/32'">
-                                ${coin.name} (${coin.symbol.toUpperCase()})
+                                ${coin.name} (${coin.symbol})
                             </h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
@@ -326,7 +325,7 @@ class CryptoDashboard {
     }
 }
 
-// Initialize when DOM is loaded
+// Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new CryptoDashboard();
 });
