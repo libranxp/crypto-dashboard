@@ -1,3 +1,4 @@
+import os
 import requests
 import pandas as pd
 import numpy as np
@@ -20,6 +21,11 @@ class CryptoTradingScanner:
             'vwap': 2,
             'sentiment': 0.6
         }
+        self.ensure_data_directory()
+
+    def ensure_data_directory(self):
+        """Ensure the docs/data directory exists"""
+        os.makedirs('docs/data', exist_ok=True)
 
     def fetch_data_with_retry(self, max_retries=3):
         for attempt in range(max_retries):
@@ -47,7 +53,6 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
-        # Mock technical indicators (replace with real calculations if possible)
         np.random.seed(int(datetime.now().timestamp()))
         df['rsi'] = np.random.randint(50, 71, len(df))
         df['rvol'] = np.round(np.random.uniform(2, 5, len(df)), 1)
@@ -103,7 +108,7 @@ class CryptoTradingScanner:
     def generate_risk_assessment(self, row):
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
+        position_size = min(10, row['ai_score'] * 2)
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -159,11 +164,11 @@ if __name__ == "__main__":
     scanner = CryptoTradingScanner()
     results = scanner.run_scan()
     
-    # Save results to docs/data folder for GitHub Pages
+    # Save results to JSON file
     with open('docs/data/scan_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     
-    # Save last update timestamp
+    # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
