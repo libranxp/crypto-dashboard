@@ -1,42 +1,73 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Crypto Scanner</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="styles.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://kit.fontawesome.com/YOUR_KIT_CODE.js" crossorigin="anonymous"></script>
-</head>
-<body>
-    <div class="container mt-4" id="app">
-        <div class="text-center mb-4">
-            <h1><i class="fas fa-chart-line"></i> AI Crypto Scanner</h1>
-            <button id="refresh-btn" class="btn btn-primary">
-                <i class="fas fa-sync-alt"></i> Refresh Data
-            </button>
-            <p class="text-muted mt-2">Last updated: <span id="last-updated">Never</span></p>
-        </div>
-        
-        <div class="table-responsive">
-            <table class="table table-hover" id="results-table">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Coin</th>
-                        <th>Price</th>
-                        <th>24h Change</th>
-                        <th>Volume</th>
-                        <th>AI Score</th>
-                    </tr>
-                </thead>
-                <tbody id="results-body">
-                    <!-- Data will be loaded here -->
-                </tbody>
-            </table>
-        </div>
-    </div>
-    
-    <script src="app.js"></script>
-</body>
-</html>
+class CryptoScanner {
+    constructor() {
+        this.dataUrl = 'scan_results.json';  // Now in same directory
+        this.resultsBody = document.getElementById('results-body');
+        this.lastUpdated = document.getElementById('last-updated');
+        document.getElementById('refresh-btn').addEventListener('click', () => this.loadData());
+        this.loadData();
+    }
+
+    async loadData() {
+        try {
+            const response = await fetch(this.dataUrl + '?t=' + Date.now());
+            if (!response.ok) throw new Error('Network response was not ok');
+            
+            const data = await response.json();
+            this.displayResults(data);
+            
+            // Update last updated time
+            if (data.length > 0) {
+                const timestamp = new Date(data[0].timestamp);
+                this.lastUpdated.textContent = timestamp.toLocaleString();
+            }
+        } catch (error) {
+            console.error('Error loading data:', error);
+            this.resultsBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-danger">
+                        Failed to load data. Please try again later.
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    displayResults(data) {
+        if (!data || data.length === 0) {
+            this.resultsBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        No cryptocurrencies match the current criteria
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        this.resultsBody.innerHTML = data.map(item => `
+            <tr>
+                <td>
+                    <img src="${item.image}" width="20" height="20" 
+                         onerror="this.src='https://via.placeholder.com/20'" 
+                         alt="${item.name}">
+                    ${item.symbol.toUpperCase()}
+                </td>
+                <td>$${item.current_price.toFixed(4)}</td>
+                <td class="${item.price_change_percentage_24h >= 0 ? 'text-success' : 'text-danger'}">
+                    ${item.price_change_percentage_24h.toFixed(2)}%
+                </td>
+                <td>$${(item.total_volume / 1000000).toFixed(2)}M</td>
+                <td>
+                    <span class="badge ${item.ai_score >= 7 ? 'bg-success' : item.ai_score >= 4 ? 'bg-warning' : 'bg-danger'}">
+                        ${item.ai_score}
+                    </span>
+                </td>
+            </tr>
+        `).join('');
+    }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    new CryptoScanner();
+});
