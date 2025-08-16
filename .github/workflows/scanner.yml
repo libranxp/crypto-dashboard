@@ -2,7 +2,7 @@ name: Crypto Scanner Automation
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/10 * * * *'  # Every 10 minutes
   workflow_dispatch:
   push:
     branches: [ main ]
@@ -32,20 +32,16 @@ jobs:
         working-directory: ./backend
         run: python scanner.py
 
-      - name: Move results and commit
+      - name: Prepare data for GitHub Pages
         run: |
-          # Move results to root
-          mv backend/scan_results.json ./
-          
-          # Configure git
+          mkdir -p docs/data
+          cp backend/scan_results.json docs/data/
+          echo "Updated scan data" > docs/data/update.txt
+
+      - name: Commit and push changes
+        run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          
-          # Add and commit
-          git add scan_results.json
-          if git diff-index --quiet HEAD --; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update scan results [skip ci]"
-            git push
-          fi
+          git add .
+          git diff --cached --quiet || git commit -m "Update scan results [skip ci]"
+          git push
