@@ -9,94 +9,91 @@ class CryptoTradingScanner:
     def __init__(self):
         self.base_url = "https://api.coingecko.com/api/v3"
         self.criteria = {
-            'price_min': 0.001,
-            'price_max': 100,
-            'volume_min': 10_000_000,
-            'change_min': 2,
-            'change_max': 20,
-            'mcap_min': 10_000_000,
-            'mcap_max': 5_000_000_000,
-            'rsi_min': 50,
-            'rsi_max': 70,
-            'rvol_min': 2,
-            'twitter_min': 10
+            'price': (0.001, 100),
+            'volume': 10_000_000,
+            'change': (2, 20),
+            'mcap': (10_000_000, 5_000_000_000),
+            'rsi': (50, 70),
+            'rvol': 2,
+            'twitter': 10
         }
 
     def fetch_data(self):
-        """Fetch data from CoinGecko API with error handling"""
-        url = f"{self.base_url}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250"
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(
+                f"{self.base_url}/coins/markets",
+                params={
+                    'vs_currency': 'usd',
+                    'order': 'market_cap_desc',
+                    'per_page': 250,
+                    'sparkline': 'false'
+                },
+                timeout=10
+            )
             response.raise_for_status()
             return pd.DataFrame(response.json())
         except Exception as e:
-            print(f"API Error: {str(e)}")
+            print(f"Data fetch error: {e}")
             return pd.DataFrame()
 
-    def calculate_technical(self, df):
-        """Calculate technical indicators"""
+    def calculate_indicators(self, df):
         if df.empty:
             return df
             
-        np.random.seed(42)  # For consistent mock data
-        df['rsi'] = np.random.randint(self.criteria['rsi_min'], 
-                                    self.criteria['rsi_max']+1, 
-                                    len(df))
-        df['rvol'] = np.round(np.random.uniform(self.criteria['rvol_min'], 5, len(df)), 1)
+        np.random.seed(42)  # Consistent mock values
+        df['rsi'] = np.random.randint(self.criteria['rsi'][0], self.criteria['rsi'][1]+1, len(df))
+        df['rvol'] = np.round(np.random.uniform(self.criteria['rvol'], 5, len(df)), 1)
         df['ema_alignment'] = np.random.random(len(df)) > 0.3
         df['vwap_proximity'] = np.round(np.random.uniform(-2, 2, len(df)), 2)
-        df['twitter_mentions'] = np.random.randint(self.criteria['twitter_min'], 100, len(df))
+        df['twitter_mentions'] = np.random.randint(self.criteria['twitter'], 100, len(df))
         return df
 
-    def filter_coins(self, df):
-        """Apply all scanner filters"""
-        if df.empty:
-            return df
-            
-        df = self.calculate_technical(df)
+    def apply_filters(self, df):
+        filtered = df[
+            (df['current_price'] >= self.criteria['price'][0]) &
+            (df['current_price'] <= self.criteria['price'][1]) &
+            (df['total_volume'] >= self.criteria['volume']) &
+            (df['price_change_percentage_24h'] >= self.criteria['change'][0]) &
+            (df['price_change_percentage_24h'] <= self.criteria['change'][1]) &
+            (df['market_cap'] >= self.criteria['mcap'][0]) &
+            (df['market_cap'] <= self.criteria['mcap'][1])
+        ].copy()
         
-        return df[
-            (df['current_price'] >= self.criteria['price_min']) &
-            (df['current_price'] <= self.criteria['price_max']) &
-            (df['total_volume'] >= self.criteria['volume_min']) &
-            (df['price_change_percentage_24h'] >= self.criteria['change_min']) &
-            (df['price_change_percentage_24h'] <= self.criteria['change_max']) &
-            (df['market_cap'] >= self.criteria['mcap_min']) &
-            (df['market_cap'] <= self.criteria['mcap_max']) &
-            (df['rsi'] >= self.criteria['rsi_min']) &
-            (df['rsi'] <= self.criteria['rsi_max']) &
-            (df['rvol'] >= self.criteria['rvol_min']) &
-            (df['ema_alignment'] == True) &
-            (abs(df['vwap_proximity']) <= 2) &
-            (df['twitter_mentions'] >= self.criteria['twitter_min'])
+        filtered = self.calculate_indicators(filtered)
+        
+        return filtered[
+            (filtered['rsi'] >= self.criteria['rsi'][0]) &
+            (filtered['rsi'] <= self.criteria['rsi'][1]) &
+            (filtered['rvol'] >= self.criteria['rvol']) &
+            (filtered['ema_alignment'] == True) &
+            (abs(filtered['vwap_proximity']) <= 2) &
+            (filtered['twitter_mentions'] >= self.criteria['twitter'])
         ]
 
     def calculate_scores(self, df):
-        """Generate AI scores 1-10"""
         if df.empty:
             return pd.Series([])
             
-        factors = pd.DataFrame()
-        factors['momentum'] = df['price_change_percentage_24h'] / 100
-        factors['liquidity'] = np.log10(df['total_volume']) / 10
-        factors['size'] = np.log10(df['market_cap']) / 12
-        factors['strength'] = df['rsi'] / 100
-        factors['volatility'] = df['rvol'] / 5
+        X = pd.DataFrame()
+        X['momentum'] = df['price_change_percentage_24h'] / 100
+        X['liquidity'] = np.log10(df['total_volume']) / 10
+        X['size'] = np.log10(df['market_cap']) / 12
+        X['strength'] = df['rsi'] / 100
+        X['volatility'] = df['rvol'] / 5
         
         return np.clip(
-            (factors['momentum'] * 0.35) +
-            (factors['liquidity'] * 0.25) +
-            (factors['size'] * 0.15) +
-            (factors['strength'] * 0.15) +
-            (factors['volatility'] * 0.1) +
-            np.random.normal(0.5, 0.2, len(factors)),
+            (X['momentum'] * 0.35) +
+            (X['liquidity'] * 0.25) +
+            (X['size'] * 0.15) +
+            (X['strength'] * 0.15) +
+            (X['volatility'] * 0.1) +
+            np.random.normal(0.5, 0.2, len(X)),
             1, 10
         ).round(1)
 
     def run_scan(self):
-        """Execute full scanning pipeline"""
         df = self.fetch_data()
-        filtered = self.filter_coins(df)
+        filtered = self.apply_filters(df)
         
         if not filtered.empty:
             filtered['ai_score'] = self.calculate_scores(filtered)
@@ -115,6 +112,6 @@ if __name__ == "__main__":
     results = scanner.run_scan()
     
     with open('scan_results.json', 'w') as f:
-        json.dump(results, f)
+        json.dump(results, f, indent=2)
     
     print(f"Scan completed. Found {len(results)} matching assets.")
