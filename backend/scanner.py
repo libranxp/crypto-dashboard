@@ -28,7 +28,7 @@ class CryptoTradingScanner:
         os.makedirs('docs/data', exist_ok=True)
 
     def fetch_data(self, max_retries=3):
-        """Fetch data from CoinGecko API with retries"""
+        """Fetch live data from CoinGecko API with retries"""
         for attempt in range(max_retries):
             try:
                 response = requests.get(
@@ -61,6 +61,7 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
+        # Use current timestamp for random seed to ensure fresh values
         np.random.seed(int(datetime.now().timestamp()))
         
         df['rsi'] = np.random.randint(50, 71, len(df))
@@ -98,7 +99,7 @@ class CryptoTradingScanner:
         ]
 
     def calculate_ai_score(self, df):
-        """Generate AI scores (1-10)"""
+        """Generate AI scores (1-10) based on multiple factors"""
         if df.empty:
             return pd.Series([])
             
@@ -123,7 +124,7 @@ class CryptoTradingScanner:
         """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)
+        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -135,12 +136,17 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
+            print("Starting scan...")
             df = self.fetch_data()
+            print(f"Fetched {len(df)} coins from API")
+            
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
             filtered = self.apply_filters(df)
+            print(f"Found {len(filtered)} coins matching criteria")
+            
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
@@ -157,7 +163,7 @@ class CryptoTradingScanner:
                     'id': coin_id,
                     'symbol': symbol,
                     'name': row['name'],
-                    'image': row['image'] if str(row['image']).startswith('http') else f"https://www.coingecko.com/{row['image']}",
+                    'image': self.get_valid_image_url(row['image']),
                     'price': round(row['current_price'], 4),
                     'change_24h': round(row['price_change_percentage_24h'], 2),
                     'volume': round(row['total_volume'], 2),
@@ -171,25 +177,35 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}/news",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
                     'risk': self.generate_risk_assessment(row)
                 })
             
+            print(f"Scan completed with {len(results)} valid assets")
             return results
         except Exception as e:
-            print(f"Error during scan: {str(e)}")
+            print(f"Critical error during scan: {str(e)}")
             return []
+
+    def get_valid_image_url(self, img_url):
+        """Ensure we have a valid image URL"""
+        if not img_url:
+            return "https://via.placeholder.com/64"
+        if img_url.startswith('http'):
+            return img_url
+        return f"https://www.coingecko.com/{img_url}"
 
 if __name__ == "__main__":
     scanner = CryptoTradingScanner()
     results = scanner.run_scan()
     
     # Save results to JSON file
-    with open('docs/data/scan_results.json', 'w') as f:
+    results_path = 'docs/data/scan_results.json'
+    with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
     
     # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    print(f"Scan completed. Found {len(results)} matching assets.")
+    print(f"Results saved to {results_path}")
