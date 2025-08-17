@@ -135,17 +135,12 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
-            print("Starting scan...")
             df = self.fetch_data()
-            print(f"Fetched {len(df)} coins from API")
-            
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
             filtered = self.apply_filters(df)
-            print(f"After filtering: {len(filtered)} coins")
-            
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
@@ -180,7 +175,6 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed with {len(results)} valid assets")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
@@ -198,4 +192,4 @@ if __name__ == "__main__":
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    print("Results saved successfully")
+    print(f"Scan completed. Found {len(results)} matching assets.")
