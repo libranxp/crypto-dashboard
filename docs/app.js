@@ -4,12 +4,11 @@ class CryptoDashboard {
             results: 'data/scan_results.json',
             update: 'data/last_update.txt'
         };
-        this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
         
         this.initElements();
         this.initEventListeners();
-        this.loadData();
+        this.loadInitialData();
     }
 
     initElements() {
@@ -19,7 +18,8 @@ class CryptoDashboard {
             filterSelect: document.getElementById('filter-select'),
             refreshBtn: document.getElementById('refresh-btn'),
             loadingIndicator: document.getElementById('loading-indicator'),
-            toast: document.getElementById('refresh-toast')
+            toast: document.getElementById('refresh-toast'),
+            errorAlert: document.getElementById('error-alert')
         };
     }
 
@@ -28,39 +28,28 @@ class CryptoDashboard {
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
     }
 
-    async fetchWithRetry(url, options = {}, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-            try {
-                const response = await fetch(`${url}?${this.cacheBuster}`, options);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return await response.json();
-            } catch (error) {
-                console.error(`Attempt ${i + 1} failed for ${url}:`, error);
-                if (i === retries - 1) throw error;
-                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-            }
-        }
-    }
-
-    async loadData() {
+    async loadInitialData() {
         try {
             this.showLoading();
             
+            // First try to load with cache busting
             const [data, update] = await Promise.all([
-                this.fetchWithRetry(this.dataUrls.results),
-                this.fetchWithRetry(this.dataUrls.update)
+                this.fetchData(`${this.dataUrls.results}?t=${Date.now()}`),
+                this.fetchData(`${this.dataUrls.update}?t=${Date.now()}`)
             ]);
-            
-            if (!data || !Array.isArray(data)) {
-                throw new Error("Invalid data format received");
-            }
             
             this.scanData = data;
             this.updateLastUpdated(update);
             this.displayResults();
+            
+            // Hide any previous errors
+            this.elements.errorAlert.classList.add('d-none');
         } catch (error) {
-            console.error('Data loading failed:', error);
-            this.showError('Failed to load data. Please try refreshing.');
+            console.error('Initial data load failed:', error);
+            this.showError('Failed to load initial data. Trying again...');
+            
+            // If initial load fails, try again with force refresh
+            await this.refreshData();
         } finally {
             this.hideLoading();
         }
@@ -71,20 +60,37 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh reload by using new cache buster
-            this.cacheBuster = `force_refresh=${Date.now()}`;
-            await this.loadData();
+            // Force fresh load with new timestamp
+            const [data, update] = await Promise.all([
+                this.fetchData(`${this.dataUrls.results}?force_refresh=${Date.now()}`),
+                this.fetchData(`${this.dataUrls.update}?force_refresh=${Date.now()}`)
+            ]);
+            
+            this.scanData = data;
+            this.updateLastUpdated(update);
+            this.displayResults();
             
             // Show success toast
             const toast = new bootstrap.Toast(this.elements.toast);
             toast.show();
+            
+            // Hide error if previously shown
+            this.elements.errorAlert.classList.add('d-none');
         } catch (error) {
             console.error('Refresh failed:', error);
-            this.showError('Refresh failed. Please try again.');
+            this.showError('Failed to refresh data. Please try again.');
         } finally {
             this.elements.refreshBtn.disabled = false;
             this.hideLoading();
         }
+    }
+
+    async fetchData(url) {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
     }
 
     displayResults() {
@@ -158,8 +164,8 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="News & Catalysts">
-                        <i class="fas fa-newspaper"></i>
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="View on CoinGecko">
+                        <i class="fas fa-external-link-alt"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
                             onclick="dashboard.showDetails('${item.id}')"
@@ -271,7 +277,7 @@ class CryptoDashboard {
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-newspaper"></i> News & Catalysts
+                                <i class="fas fa-external-link-alt"></i> CoinGecko
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -319,15 +325,8 @@ class CryptoDashboard {
     }
 
     showError(message) {
-        this.elements.resultsContainer.innerHTML = `
-            <div class="alert alert-danger">
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                ${message}
-                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
-                    <i class="fas fa-sync-alt"></i> Retry
-                </button>
-            </div>
-        `;
+        this.elements.errorAlert.textContent = message;
+        this.elements.errorAlert.classList.remove('d-none');
     }
 }
 
