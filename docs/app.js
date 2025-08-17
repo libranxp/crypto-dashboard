@@ -1,12 +1,15 @@
 class CryptoDashboard {
     constructor() {
-        this.dataUrl = 'data/scan_results.json';
-        this.lastUpdateUrl = 'data/last_update.txt';
+        this.dataUrls = {
+            results: 'data/scan_results.json',
+            update: 'data/last_update.txt'
+        };
+        this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
         
         this.initElements();
         this.initEventListeners();
-        this.loadData();
+        this.loadInitialData();
     }
 
     initElements() {
@@ -25,34 +28,47 @@ class CryptoDashboard {
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
     }
 
-    async fetchData(url) {
-        try {
-            const response = await fetch(`${url}?t=${Date.now()}`);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            return await response.json();
-        } catch (error) {
-            console.error(`Failed to fetch ${url}:`, error);
-            throw error;
-        }
-    }
-
-    async loadData() {
+    async loadInitialData() {
         try {
             this.showLoading();
             
-            const [data, update] = await Promise.all([
-                this.fetchData(this.dataUrl),
-                this.fetchData(this.lastUpdateUrl)
-            ]);
-            
-            this.scanData = data;
-            this.updateLastUpdated(update);
-            this.displayResults();
+            // First try loading with cache busting
+            try {
+                await this.loadData(true);
+            } catch (initialError) {
+                console.log("Initial load with cache busting failed, trying without...");
+                await this.loadData(false);
+            }
         } catch (error) {
-            console.error('Data loading failed:', error);
-            this.showError('Failed to load data. Please try again later.');
+            console.error('Initial data loading failed:', error);
+            this.showError('Failed to load initial data. Please try refreshing.');
         } finally {
             this.hideLoading();
+        }
+    }
+
+    async loadData(useCacheBusting = true) {
+        try {
+            this.showLoading();
+            
+            const cacheParam = useCacheBusting ? `?${this.cacheBuster}` : '';
+            const [dataResponse, updateResponse] = await Promise.all([
+                fetch(`${this.dataUrls.results}${cacheParam}`),
+                fetch(`${this.dataUrls.update}${cacheParam}`)
+            ]);
+            
+            if (!dataResponse.ok || !updateResponse.ok) {
+                throw new Error('Failed to fetch data');
+            }
+            
+            this.scanData = await dataResponse.json();
+            const lastUpdate = await updateResponse.text();
+            
+            this.displayResults();
+            this.updateLastUpdated(lastUpdate);
+        } catch (error) {
+            console.error('Data loading failed:', error);
+            throw error;
         }
     }
 
@@ -61,15 +77,8 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh reload
-            const [data, update] = await Promise.all([
-                this.fetchData(`${this.dataUrl}?force_refresh=${Date.now()}`),
-                this.fetchData(`${this.lastUpdateUrl}?force_refresh=${Date.now()}`)
-            ]);
-            
-            this.scanData = data;
-            this.updateLastUpdated(update);
-            this.displayResults();
+            this.cacheBuster = `force_refresh=${Date.now()}`;
+            await this.loadData(true);
             
             // Show success toast
             const toast = new bootstrap.Toast(this.elements.toast);
@@ -84,9 +93,18 @@ class CryptoDashboard {
     }
 
     displayResults() {
-        if (!this.scanData || this.scanData.length === 0) {
+        if (!this.scanData) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-warning">
+                    No data available. Please try refreshing.
+                </div>
+            `;
+            return;
+        }
+
+        if (this.scanData.length === 0) {
+            this.elements.resultsContainer.innerHTML = `
+                <div class="alert alert-info">
                     No cryptocurrencies match the current criteria. The market may be quiet now.
                 </div>
             `;
