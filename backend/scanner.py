@@ -28,7 +28,7 @@ class CryptoTradingScanner:
         os.makedirs('docs/data', exist_ok=True)
 
     def fetch_data(self, max_retries=3):
-        """Fetch live data from CoinGecko API with retries"""
+        """Fetch data from CoinGecko API with retries"""
         for attempt in range(max_retries):
             try:
                 response = requests.get(
@@ -98,7 +98,7 @@ class CryptoTradingScanner:
         ]
 
     def calculate_ai_score(self, df):
-        """Generate AI scores (1-10) based on multiple factors"""
+        """Generate AI scores (1-10)"""
         if df.empty:
             return pd.Series([])
             
@@ -135,19 +135,16 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
-            print("Fetching live data from CoinGecko...")
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
-            print("Applying filters...")
             filtered = self.apply_filters(df)
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
                 
-            print("Calculating AI scores...")
             filtered['ai_score'] = self.calculate_ai_score(filtered)
             filtered['timestamp'] = datetime.utcnow().isoformat()
             
@@ -160,7 +157,7 @@ class CryptoTradingScanner:
                     'id': coin_id,
                     'symbol': symbol,
                     'name': row['name'],
-                    'image': self.get_valid_image_url(row['image']),
+                    'image': row['image'] if str(row['image']).startswith('http') else f"https://www.coingecko.com/{row['image']}",
                     'price': round(row['current_price'], 4),
                     'change_24h': round(row['price_change_percentage_24h'], 2),
                     'volume': round(row['total_volume'], 2),
@@ -174,23 +171,14 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}/news",
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed. Found {len(results)} matching assets.")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
             return []
-
-    def get_valid_image_url(self, img_url):
-        """Ensure we have a valid image URL"""
-        if not img_url:
-            return "https://via.placeholder.com/64"
-        if img_url.startswith('http'):
-            return img_url
-        return f"https://www.coingecko.com/{img_url}"
 
 if __name__ == "__main__":
     scanner = CryptoTradingScanner()
@@ -203,3 +191,5 @@ if __name__ == "__main__":
     # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
+    
+    print(f"Scan completed. Found {len(results)} matching assets.")
