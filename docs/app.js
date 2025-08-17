@@ -1,9 +1,18 @@
 class CryptoDashboard {
     constructor() {
-        this.dataUrl = 'data/scan_results.json';
-        this.lastUpdateUrl = 'data/last_update.txt';
+        this.dataUrls = {
+            results: 'data/scan_results.json',
+            update: 'data/last_update.txt'
+        };
         this.cacheBuster = `t=${Date.now()}`;
+        this.scanData = null;
         
+        this.initElements();
+        this.initEventListeners();
+        this.loadData();
+    }
+
+    initElements() {
         this.elements = {
             lastUpdate: document.getElementById('last-update'),
             resultsContainer: document.getElementById('results-container'),
@@ -12,9 +21,6 @@ class CryptoDashboard {
             loadingIndicator: document.getElementById('loading-indicator'),
             toast: document.getElementById('refresh-toast')
         };
-        
-        this.initEventListeners();
-        this.loadData();
     }
 
     initEventListeners() {
@@ -40,8 +46,8 @@ class CryptoDashboard {
             this.showLoading();
             
             const [data, update] = await Promise.all([
-                this.fetchData(this.dataUrl),
-                this.fetchData(this.lastUpdateUrl)
+                this.fetchData(this.dataUrls.results),
+                this.fetchData(this.dataUrls.update)
             ]);
             
             this.scanData = data;
