@@ -4,11 +4,12 @@ class CryptoDashboard {
             results: 'data/scan_results.json',
             update: 'data/last_update.txt'
         };
+        this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
         
         this.initElements();
         this.initEventListeners();
-        this.loadData(true); // Initial load with cache busting
+        this.loadData();
     }
 
     initElements() {
@@ -30,17 +31,18 @@ class CryptoDashboard {
     async fetchWithRetry(url, options = {}, retries = 3) {
         for (let i = 0; i < retries; i++) {
             try {
-                const response = await fetch(`${url}?t=${Date.now()}`, options);
+                const response = await fetch(`${url}?${this.cacheBuster}`, options);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 return await response.json();
             } catch (error) {
+                console.error(`Attempt ${i + 1} failed for ${url}:`, error);
                 if (i === retries - 1) throw error;
                 await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
             }
         }
     }
 
-    async loadData(initialLoad = false) {
+    async loadData() {
         try {
             this.showLoading();
             
@@ -50,16 +52,12 @@ class CryptoDashboard {
             ]);
             
             if (!data || !Array.isArray(data)) {
-                throw new Error('Invalid data format received');
+                throw new Error("Invalid data format received");
             }
             
             this.scanData = data;
             this.updateLastUpdated(update);
             this.displayResults();
-            
-            if (initialLoad && data.length > 0) {
-                this.showToast('Data loaded successfully!');
-            }
         } catch (error) {
             console.error('Data loading failed:', error);
             this.showError('Failed to load data. Please try refreshing.');
@@ -73,16 +71,13 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh reload
-            const [data, update] = await Promise.all([
-                this.fetchWithRetry(`${this.dataUrls.results}?force_refresh=${Date.now()}`),
-                this.fetchWithRetry(`${this.dataUrls.update}?force_refresh=${Date.now()}`)
-            ]);
+            // Force fresh reload by using new cache buster
+            this.cacheBuster = `force_refresh=${Date.now()}`;
+            await this.loadData();
             
-            this.scanData = data;
-            this.updateLastUpdated(update);
-            this.displayResults();
-            this.showToast('Data refreshed successfully!');
+            // Show success toast
+            const toast = new bootstrap.Toast(this.elements.toast);
+            toast.show();
         } catch (error) {
             console.error('Refresh failed:', error);
             this.showError('Refresh failed. Please try again.');
@@ -163,7 +158,7 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="News">
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="News & Catalysts">
                         <i class="fas fa-newspaper"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
@@ -276,7 +271,7 @@ class CryptoDashboard {
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-newspaper"></i> Latest News
+                                <i class="fas fa-newspaper"></i> News & Catalysts
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -333,13 +328,6 @@ class CryptoDashboard {
                 </button>
             </div>
         `;
-    }
-
-    showToast(message) {
-        const toastEl = this.elements.toast;
-        toastEl.querySelector('.toast-body').textContent = message;
-        const toast = new bootstrap.Toast(toastEl);
-        toast.show();
     }
 }
 
