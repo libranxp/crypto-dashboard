@@ -25,26 +25,19 @@ jobs:
           python-version: '3.10'
 
       - name: Create data directory
-        run: |
-          mkdir -p docs/data
-          echo "Directory created at: $(pwd)/docs/data"
+        run: mkdir -p docs/data
 
       - name: Install dependencies
         working-directory: ./backend
-        run: |
-          pip install -r requirements.txt
-          echo "Dependencies installed"
+        run: pip install -r requirements.txt
 
       - name: Run scanner
         working-directory: ./backend
-        run: |
-          python scanner.py
-          ls -la docs/data/
+        run: python scanner.py
 
       - name: Commit and push changes
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git add docs/data/
-          git status
           git diff --cached --quiet || (git commit -m "Update scan results [skip ci]" && git push)
