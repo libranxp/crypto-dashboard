@@ -1,10 +1,7 @@
 class CryptoDashboard {
     constructor() {
-        this.dataUrls = {
-            results: 'data/scan_results.json',
-            update: 'data/last_update.txt'
-        };
-        this.cacheBuster = `t=${Date.now()}`;
+        this.dataUrl = 'data/scan_results.json';
+        this.lastUpdateUrl = 'data/last_update.txt';
         this.scanData = null;
         
         this.initElements();
@@ -30,10 +27,8 @@ class CryptoDashboard {
 
     async fetchData(url) {
         try {
-            const response = await fetch(`${url}?${this.cacheBuster}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
+            const response = await fetch(`${url}?t=${Date.now()}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             return await response.json();
         } catch (error) {
             console.error(`Failed to fetch ${url}:`, error);
@@ -46,8 +41,8 @@ class CryptoDashboard {
             this.showLoading();
             
             const [data, update] = await Promise.all([
-                this.fetchData(this.dataUrls.results),
-                this.fetchData(this.dataUrls.update)
+                this.fetchData(this.dataUrl),
+                this.fetchData(this.lastUpdateUrl)
             ]);
             
             this.scanData = data;
@@ -67,8 +62,14 @@ class CryptoDashboard {
             this.elements.refreshBtn.disabled = true;
             
             // Force fresh reload
-            this.cacheBuster = `force_refresh=${Date.now()}`;
-            await this.loadData();
+            const [data, update] = await Promise.all([
+                this.fetchData(`${this.dataUrl}?force_refresh=${Date.now()}`),
+                this.fetchData(`${this.lastUpdateUrl}?force_refresh=${Date.now()}`)
+            ]);
+            
+            this.scanData = data;
+            this.updateLastUpdated(update);
+            this.displayResults();
             
             // Show success toast
             const toast = new bootstrap.Toast(this.elements.toast);
