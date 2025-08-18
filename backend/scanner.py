@@ -28,7 +28,7 @@ class CryptoTradingScanner:
         os.makedirs('docs/data', exist_ok=True)
 
     def fetch_data(self, max_retries=3):
-        """Fetch live data from CoinGecko API with retries"""
+        """Fetch live data from CoinGecko with retries"""
         for attempt in range(max_retries):
             try:
                 response = requests.get(
@@ -45,8 +45,7 @@ class CryptoTradingScanner:
                 response.raise_for_status()
                 data = response.json()
                 
-                # Validate we got proper data
-                if not isinstance(data, list) or len(data) == 0:
+                if not data or not isinstance(data, list):
                     raise ValueError("Invalid data format from API")
                     
                 return pd.DataFrame(data)
@@ -62,9 +61,7 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
-        # Use current time as seed for reproducibility
         np.random.seed(int(datetime.now().timestamp()))
-        
         df['rsi'] = np.random.randint(50, 71, len(df))
         df['rvol'] = np.round(np.random.uniform(2, 5, len(df)), 1)
         df['ema_alignment'] = np.random.random(len(df)) > 0.3
@@ -137,17 +134,12 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
-            print("Starting scan...")
             df = self.fetch_data()
-            print(f"Fetched {len(df)} coins from API")
-            
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
             filtered = self.apply_filters(df)
-            print(f"After filtering: {len(filtered)} coins")
-            
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
@@ -182,7 +174,6 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed with {len(results)} valid assets")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
@@ -201,11 +192,11 @@ if __name__ == "__main__":
     results = scanner.run_scan()
     
     # Save results to JSON file
-    results_path = 'docs/data/scan_results.json'
-    with open(results_path, 'w') as f:
+    with open('docs/data/scan_results.json', 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"Results saved to {results_path}")
     
     # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
+    
+    print(f"Scan completed. Found {len(results)} matching assets.")
