@@ -45,7 +45,7 @@ class CryptoTradingScanner:
                 response.raise_for_status()
                 data = response.json()
                 
-                if not data or not isinstance(data, list):
+                if not isinstance(data, list):
                     raise ValueError("Invalid data format from API")
                     
                 return pd.DataFrame(data)
@@ -62,6 +62,7 @@ class CryptoTradingScanner:
             return df
             
         np.random.seed(int(datetime.now().timestamp()))
+        
         df['rsi'] = np.random.randint(50, 71, len(df))
         df['rvol'] = np.round(np.random.uniform(2, 5, len(df)), 1)
         df['ema_alignment'] = np.random.random(len(df)) > 0.3
@@ -97,7 +98,7 @@ class CryptoTradingScanner:
         ]
 
     def calculate_ai_score(self, df):
-        """Generate AI scores (1-10) based on multiple factors"""
+        """Generate AI scores (1-10)"""
         if df.empty:
             return pd.Series([])
             
@@ -122,7 +123,7 @@ class CryptoTradingScanner:
         """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
+        position_size = min(10, row['ai_score'] * 2)
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -134,16 +135,19 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
+            print("Fetching live data from CoinGecko...")
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
+            print("Applying filters...")
             filtered = self.apply_filters(df)
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
                 
+            print("Calculating AI scores...")
             filtered['ai_score'] = self.calculate_ai_score(filtered)
             filtered['timestamp'] = datetime.utcnow().isoformat()
             
@@ -174,13 +178,14 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
+            print(f"Scan completed. Found {len(results)} matching assets.")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
             return []
 
     def get_valid_image_url(self, img_url):
-        """Ensure we have a valid image URL"""
+        """Ensure valid image URL"""
         if not img_url:
             return "https://via.placeholder.com/64"
         if img_url.startswith('http'):
@@ -198,5 +203,3 @@ if __name__ == "__main__":
     # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
-    
-    print(f"Scan completed. Found {len(results)} matching assets.")
