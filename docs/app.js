@@ -32,64 +32,69 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // First try to load with cache busting
-            try {
-                await this.loadData(true);
-            } catch (initialError) {
-                console.log("Initial load with cache busting failed, trying without...");
-                await this.loadData(false);
+            // First try to load cached data quickly
+            const cachedData = await this.fetchData(this.dataUrls.results);
+            if (cachedData) {
+                this.scanData = cachedData;
+                this.displayResults();
             }
-        } catch (finalError) {
-            console.error('Initial data loading failed:', finalError);
-            this.showError('Failed to load initial data. Please try refreshing.');
+            
+            // Then load fresh data in background
+            this.refreshData(true);
+        } catch (error) {
+            console.error('Initial load failed:', error);
+            this.showError('Failed to load initial data. Trying refresh...');
+            await this.refreshData();
         }
     }
 
-    async loadData(useCacheBust = true) {
+    async fetchData(url, useCacheBuster = true) {
         try {
-            this.showLoading();
+            const fullUrl = useCacheBuster ? `${url}?${this.cacheBuster}` : url;
+            const response = await fetch(fullUrl);
             
-            const cacheParam = useCacheBust ? `?${this.cacheBuster}` : '';
-            const [dataResponse, updateResponse] = await Promise.all([
-                fetch(`${this.dataUrls.results}${cacheParam}`),
-                fetch(`${this.dataUrls.update}${cacheParam}`)
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            return await response.json();
+        } catch (error) {
+            console.error(`Fetch failed for ${url}:`, error);
+            throw error;
+        }
+    }
+
+    async refreshData(silent = false) {
+        try {
+            if (!silent) {
+                this.showLoading();
+                this.elements.refreshBtn.disabled = true;
+            }
+            
+            this.cacheBuster = `force_refresh=${Date.now()}`;
+            
+            const [data, update] = await Promise.all([
+                this.fetchData(this.dataUrls.results),
+                this.fetchData(this.dataUrls.update)
             ]);
             
-            if (!dataResponse.ok || !updateResponse.ok) {
-                throw new Error('Failed to fetch data');
-            }
-            
-            this.scanData = await dataResponse.json();
-            const lastUpdate = await updateResponse.text();
-            
+            this.scanData = data;
+            this.updateLastUpdated(update);
             this.displayResults();
-            this.updateLastUpdated(lastUpdate);
-        } catch (error) {
-            console.error('Data loading failed:', error);
-            throw error; // Re-throw to allow handling by caller
-        } finally {
-            this.hideLoading();
-        }
-    }
-
-    async refreshData() {
-        try {
-            this.showLoading();
-            this.elements.refreshBtn.disabled = true;
             
-            // Force fresh reload
-            this.cacheBuster = `force_refresh=${Date.now()}`;
-            await this.loadData(true);
-            
-            // Show success toast
-            const toast = new bootstrap.Toast(this.elements.toast);
-            toast.show();
+            if (!silent) {
+                this.showToast('Data refreshed successfully!');
+            }
         } catch (error) {
             console.error('Refresh failed:', error);
-            this.showError('Refresh failed. Please try again.');
+            if (!silent) {
+                this.showError('Refresh failed. Please try again.');
+            }
         } finally {
-            this.elements.refreshBtn.disabled = false;
-            this.hideLoading();
+            if (!silent) {
+                this.elements.refreshBtn.disabled = false;
+                this.hideLoading();
+            }
         }
     }
 
@@ -99,7 +104,7 @@ class CryptoDashboard {
                 <div class="alert alert-warning">
                     No cryptocurrencies match the current criteria. The market may be quiet now.
                     <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
-                        <i class="fas fa-sync-alt"></i> Refresh
+                        <i class="fas fa-sync-alt"></i> Try Again
                     </button>
                 </div>
             `;
@@ -283,7 +288,7 @@ class CryptoDashboard {
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-newspaper"></i> View on CoinGecko
+                                <i class="fas fa-newspaper"></i> Latest News
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -340,6 +345,15 @@ class CryptoDashboard {
                 </button>
             </div>
         `;
+    }
+
+    showToast(message) {
+        const toastEl = this.elements.toast;
+        const toastBody = toastEl.querySelector('.toast-body');
+        toastBody.textContent = message;
+        
+        const toast = new bootstrap.Toast(toastEl);
+        toast.show();
     }
 }
 
