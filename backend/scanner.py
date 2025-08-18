@@ -28,7 +28,7 @@ class CryptoTradingScanner:
         os.makedirs('docs/data', exist_ok=True)
 
     def fetch_data(self, max_retries=3):
-        """Fetch live data from CoinGecko API with retries"""
+        """Fetch data from CoinGecko API with retries"""
         for attempt in range(max_retries):
             try:
                 response = requests.get(
@@ -61,7 +61,6 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
-        # Use current timestamp for random seed to ensure fresh values
         np.random.seed(int(datetime.now().timestamp()))
         
         df['rsi'] = np.random.randint(50, 71, len(df))
@@ -124,7 +123,7 @@ class CryptoTradingScanner:
         """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
+        position_size = min(10, row['ai_score'] * 2)
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -145,7 +144,7 @@ class CryptoTradingScanner:
                 return []
                 
             filtered = self.apply_filters(df)
-            print(f"Found {len(filtered)} coins matching criteria")
+            print(f"After filtering: {len(filtered)} coins")
             
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
@@ -181,10 +180,10 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed with {len(results)} valid assets")
+            print(f"Scan completed with {len(results)} valid results")
             return results
         except Exception as e:
-            print(f"Critical error during scan: {str(e)}")
+            print(f"Error during scan: {str(e)}")
             return []
 
     def get_valid_image_url(self, img_url):
@@ -203,9 +202,10 @@ if __name__ == "__main__":
     results_path = 'docs/data/scan_results.json'
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
+    print(f"Results saved to {results_path}")
     
     # Save last update time
-    with open('docs/data/last_update.txt', 'w') as f:
+    update_path = 'docs/data/last_update.txt'
+    with open(update_path, 'w') as f:
         f.write(datetime.utcnow().isoformat())
-    
-    print(f"Results saved to {results_path}")
+    print(f"Update timestamp saved to {update_path}")
