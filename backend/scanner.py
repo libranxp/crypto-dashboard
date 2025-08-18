@@ -144,7 +144,7 @@ class CryptoTradingScanner:
                 return []
                 
             filtered = self.apply_filters(df)
-            print(f"After filtering: {len(filtered)} coins")
+            print(f"Found {len(filtered)} coins matching criteria")
             
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
@@ -176,11 +176,11 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}#news",
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed with {len(results)} valid results")
+            print(f"Scan completed with {len(results)} valid coins")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
@@ -199,13 +199,11 @@ if __name__ == "__main__":
     results = scanner.run_scan()
     
     # Save results to JSON file
-    results_path = 'docs/data/scan_results.json'
-    with open(results_path, 'w') as f:
+    with open('docs/data/scan_results.json', 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"Results saved to {results_path}")
     
     # Save last update time
-    update_path = 'docs/data/last_update.txt'
-    with open(update_path, 'w') as f:
+    with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
-    print(f"Update timestamp saved to {update_path}")
+    
+    print(f"Saved {len(results)} coins to docs/data/scan_results.json")
