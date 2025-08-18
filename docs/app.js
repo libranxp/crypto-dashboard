@@ -32,41 +32,40 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // First try to load data normally
-            try {
-                await this.loadData();
-            } catch (initialError) {
-                console.log("Initial load failed, forcing refresh:", initialError);
-                // If initial load fails, force a refresh
-                await this.refreshData();
+            // First try loading without cache buster to use GitHub Pages cache
+            let data = await this.fetchData(this.dataUrls.results);
+            
+            // If no data, try with cache buster
+            if (!data || data.length === 0) {
+                data = await this.fetchData(`${this.dataUrls.results}?${this.cacheBuster}`);
+            }
+            
+            const update = await this.fetchData(`${this.dataUrls.update}?${this.cacheBuster}`);
+            
+            this.scanData = data || [];
+            this.updateLastUpdated(update);
+            this.displayResults();
+            
+            // If still no data, show warning
+            if (this.scanData.length === 0) {
+                this.showWarning('Data is being loaded for the first time. Please wait a few minutes and refresh.');
             }
         } catch (error) {
             console.error('Initial data loading failed:', error);
-            this.showError('Failed to load initial data. Please try refreshing.');
+            this.showError('Failed to load initial data. Please refresh.');
         } finally {
             this.hideLoading();
         }
     }
 
-    async loadData() {
+    async fetchData(url) {
         try {
-            this.showLoading();
-            
-            const [data, update] = await Promise.all([
-                this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
-                this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
-            ]);
-            
-            if (!data || !Array.isArray(data)) {
-                throw new Error("Invalid data format received");
-            }
-            
-            this.scanData = data;
-            this.updateLastUpdated(update);
-            this.displayResults();
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return await response.json();
         } catch (error) {
-            console.error('Data loading failed:', error);
-            throw error; // Re-throw to allow handling in calling function
+            console.error(`Error fetching ${url}:`, error);
+            return null;
         }
     }
 
@@ -75,35 +74,27 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh reload by using new cache buster
             this.cacheBuster = `force_refresh=${Date.now()}`;
-            await this.loadData();
+            const [data, update] = await Promise.all([
+                this.fetchData(`${this.dataUrls.results}?${this.cacheBuster}`),
+                this.fetchData(`${this.dataUrls.update}?${this.cacheBuster}`)
+            ]);
+            
+            this.scanData = data || [];
+            this.updateLastUpdated(update);
+            this.displayResults();
             
             // Show success toast
-            const toast = new bootstrap.Toast(this.elements.toast);
-            toast.show();
+            if (this.scanData.length > 0) {
+                const toast = new bootstrap.Toast(this.elements.toast);
+                toast.show();
+            }
         } catch (error) {
             console.error('Refresh failed:', error);
             this.showError('Refresh failed. Please try again.');
-            throw error;
         } finally {
             this.elements.refreshBtn.disabled = false;
             this.hideLoading();
-        }
-    }
-
-    async fetchWithRetry(url, options = {}, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-            try {
-                const response = await fetch(url, options);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return await response.json();
-            } catch (error) {
-                if (i === retries - 1) throw error;
-                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-            }
         }
     }
 
@@ -346,6 +337,15 @@ class CryptoDashboard {
                 <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
                     <i class="fas fa-sync-alt"></i> Retry
                 </button>
+            </div>
+        `;
+    }
+
+    showWarning(message) {
+        this.elements.resultsContainer.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-circle me-2"></i>
+                ${message}
             </div>
         `;
     }
