@@ -32,9 +32,9 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // First try to load cached data quickly
+            // First try to load cached data immediately
             const cachedData = await this.fetchData(this.dataUrls.results);
-            if (cachedData) {
+            if (cachedData && cachedData.length > 0) {
                 this.scanData = cachedData;
                 this.displayResults();
             }
@@ -43,20 +43,17 @@ class CryptoDashboard {
             this.refreshData(true);
         } catch (error) {
             console.error('Initial load failed:', error);
-            this.showError('Failed to load initial data. Trying refresh...');
+            this.showError('Failed to load initial data. Trying to refresh...');
             await this.refreshData();
+        } finally {
+            this.hideLoading();
         }
     }
 
-    async fetchData(url, useCacheBuster = true) {
+    async fetchData(url, isRefresh = false) {
         try {
-            const fullUrl = useCacheBuster ? `${url}?${this.cacheBuster}` : url;
-            const response = await fetch(fullUrl);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
+            const response = await fetch(`${url}?${isRefresh ? 'force_refresh=' : ''}${Date.now()}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             return await response.json();
         } catch (error) {
             console.error(`Fetch failed for ${url}:`, error);
@@ -71,11 +68,9 @@ class CryptoDashboard {
                 this.elements.refreshBtn.disabled = true;
             }
             
-            this.cacheBuster = `force_refresh=${Date.now()}`;
-            
             const [data, update] = await Promise.all([
-                this.fetchData(this.dataUrls.results),
-                this.fetchData(this.dataUrls.update)
+                this.fetchData(this.dataUrls.results, true),
+                this.fetchData(this.dataUrls.update, true)
             ]);
             
             this.scanData = data;
@@ -83,7 +78,8 @@ class CryptoDashboard {
             this.displayResults();
             
             if (!silent) {
-                this.showToast('Data refreshed successfully!');
+                const toast = new bootstrap.Toast(this.elements.toast);
+                toast.show();
             }
         } catch (error) {
             console.error('Refresh failed:', error);
@@ -103,9 +99,6 @@ class CryptoDashboard {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-warning">
                     No cryptocurrencies match the current criteria. The market may be quiet now.
-                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
-                        <i class="fas fa-sync-alt"></i> Try Again
-                    </button>
                 </div>
             `;
             return;
@@ -124,9 +117,6 @@ class CryptoDashboard {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-info">
                     No results match the selected filter. Try adjusting filters or check back later.
-                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
-                        <i class="fas fa-sync-alt"></i> Refresh
-                    </button>
                 </div>
             `;
             return;
@@ -288,7 +278,7 @@ class CryptoDashboard {
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-newspaper"></i> Latest News
+                                <i class="fas fa-newspaper"></i> View on CoinGecko
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -345,15 +335,6 @@ class CryptoDashboard {
                 </button>
             </div>
         `;
-    }
-
-    showToast(message) {
-        const toastEl = this.elements.toast;
-        const toastBody = toastEl.querySelector('.toast-body');
-        toastBody.textContent = message;
-        
-        const toast = new bootstrap.Toast(toastEl);
-        toast.show();
     }
 }
 
