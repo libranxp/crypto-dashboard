@@ -135,17 +135,12 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
-            print("Starting scan...")
             df = self.fetch_data()
-            print(f"Fetched {len(df)} coins from API")
-            
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
             filtered = self.apply_filters(df)
-            print(f"Found {len(filtered)} coins matching criteria")
-            
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
@@ -176,11 +171,10 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}#news",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed with {len(results)} valid coins")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
@@ -206,4 +200,4 @@ if __name__ == "__main__":
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    print(f"Saved {len(results)} coins to docs/data/scan_results.json")
+    print(f"Scan completed. Found {len(results)} matching assets.")
