@@ -2,8 +2,7 @@ class CryptoDashboard {
     constructor() {
         this.dataUrls = {
             results: 'data/scan_results.json',
-            update: 'data/last_update.txt',
-            status: 'data/status.json'
+            update: 'data/last_update.txt'
         };
         this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
@@ -32,11 +31,21 @@ class CryptoDashboard {
     async fetchWithRetry(url, options = {}, retries = 3) {
         for (let i = 0; i < retries; i++) {
             try {
-                const response = await fetch(`${url}?${this.cacheBuster}`, options);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        // If file doesn't exist yet, return empty data
+                        return [];
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 return await response.json();
             } catch (error) {
-                if (i === retries - 1) throw error;
+                console.error(`Fetch attempt ${i+1} failed:`, error);
+                if (i === retries - 1) {
+                    // If all retries failed, return empty data
+                    return [];
+                }
                 await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
             }
         }
@@ -46,31 +55,17 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // First try to get the status to see if data exists
-            let data = [];
-            try {
-                data = await this.fetchWithRetry(this.dataUrls.results);
-            } catch (e) {
-                console.log("No scan results found yet, using empty data");
-            }
-            
-            // Try to get the last update time
-            let updateTime = new Date().toISOString();
-            try {
-                const updateResponse = await fetch(`${this.dataUrls.update}?${this.cacheBuster}`);
-                if (updateResponse.ok) {
-                    updateTime = await updateResponse.text();
-                }
-            } catch (e) {
-                console.log("Could not load update time");
-            }
+            const [data, update] = await Promise.all([
+                this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
+                this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
+            ]);
             
             this.scanData = data;
-            this.updateLastUpdated(updateTime);
+            this.updateLastUpdated(update);
             this.displayResults();
         } catch (error) {
             console.error('Data loading failed:', error);
-            this.showError('Failed to load data. The scanner may not have run yet. Please try again later.');
+            this.showError('Failed to load data. Please try again later.');
         } finally {
             this.hideLoading();
         }
@@ -83,16 +78,7 @@ class CryptoDashboard {
             
             // Force fresh reload by using new cache buster
             this.cacheBuster = `force_refresh=${Date.now()}`;
-            
-            // Fetch the latest data
-            const [data, update] = await Promise.all([
-                this.fetchWithRetry(this.dataUrls.results),
-                fetch(`${this.dataUrls.update}?${this.cacheBuster}`).then(r => r.ok ? r.text() : new Date().toISOString())
-            ]);
-            
-            this.scanData = data;
-            this.updateLastUpdated(update);
-            this.displayResults();
+            await this.loadData();
             
             // Show success toast
             const toast = new bootstrap.Toast(this.elements.toast);
@@ -109,12 +95,11 @@ class CryptoDashboard {
     displayResults() {
         if (!this.scanData || this.scanData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    No cryptocurrencies match the current criteria or data is still loading. 
-                    The scanner runs every 10 minutes. 
-                    <button class="btn btn-sm btn-outline-primary ms-2" onclick="dashboard.refreshData()">
-                        <i class="fas fa-sync-alt"></i> Check Again
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    No cryptocurrencies match the current criteria or data is still loading.
+                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
+                        <i class="fas fa-sync-alt"></i> Try Again
                     </button>
                 </div>
             `;
@@ -133,6 +118,7 @@ class CryptoDashboard {
         if (filteredData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
                     No results match the selected filter. Try adjusting filters or check back later.
                 </div>
             `;
@@ -183,7 +169,7 @@ class CryptoDashboard {
                         <i class="fas fa-chart-line"></i>
                     </a>
                     <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
-                        <i class="fas fa-external-link-alt"></i>
+                        <i class="fas fa-coins"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
                             onclick="dashboard.showDetails('${item.id}')"
@@ -295,7 +281,7 @@ class CryptoDashboard {
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-external-link-alt"></i> CoinGecko
+                                <i class="fas fa-coins"></i> CoinGecko
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
