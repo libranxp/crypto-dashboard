@@ -146,11 +146,6 @@ body {
     gap: 5px;
 }
 
-.action-cell .btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-}
-
 @media (max-width: 768px) {
     .header {
         flex-direction: column;
