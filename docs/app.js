@@ -2,14 +2,15 @@ class CryptoDashboard {
     constructor() {
         this.dataUrls = {
             results: 'data/scan_results.json',
-            update: 'data/last_update.txt'
+            update: 'data/last_update.txt',
+            status: 'data/status.json'
         };
+        this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
-        this.isLoading = false;
         
         this.initElements();
         this.initEventListeners();
-        this.loadInitialData();
+        this.loadData();
     }
 
     initElements() {
@@ -26,133 +27,92 @@ class CryptoDashboard {
     initEventListeners() {
         this.elements.refreshBtn.addEventListener('click', () => this.refreshData());
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
-        
-        // Add periodic auto-refresh every 30 seconds
-        setInterval(() => {
-            if (!this.isLoading) {
-                this.checkForUpdates();
-            }
-        }, 30000);
     }
 
-    async loadInitialData() {
-        try {
-            this.showLoading();
-            console.log("Loading initial data...");
-            
-            // Load data immediately with cache busting
-            const timestamp = Date.now();
-            const [data, update] = await Promise.all([
-                this.fetchWithRetry(`${this.dataUrls.results}?t=${timestamp}`),
-                this.fetchWithRetry(`${this.dataUrls.update}?t=${timestamp}`)
-            ]);
-            
-            this.scanData = data;
-            this.updateLastUpdated(update);
-            this.displayResults();
-            console.log("Initial data loaded successfully");
-            
-        } catch (error) {
-            console.error('Initial data loading failed:', error);
-            this.showError('Failed to load initial data. Please refresh the page.');
-        } finally {
-            this.hideLoading();
+    async fetchWithRetry(url, options = {}, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(`${url}?${this.cacheBuster}`, options);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                if (i === retries - 1) throw error;
+                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            }
         }
     }
 
-    async fetchWithRetry(url, options = {}, retries = 5) {
-        for (let i = 0; i < retries; i++) {
+    async loadData() {
+        try {
+            this.showLoading();
+            
+            // First try to get the status to see if data exists
+            let data = [];
             try {
-                console.log(`Fetching ${url} (attempt ${i + 1})`);
-                const response = await fetch(url, {
-                    ...options,
-                    cache: 'no-cache',
-                    headers: {
-                        'Cache-Control': 'no-cache, no-store, must-revalidate',
-                        'Pragma': 'no-cache'
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                console.log(`Successfully fetched ${url}`);
-                return data;
-                
-            } catch (error) {
-                console.error(`Attempt ${i + 1} failed:`, error);
-                if (i === retries - 1) throw error;
-                await new Promise(resolve => setTimeout(resolve, 2000 * (i + 1)));
+                data = await this.fetchWithRetry(this.dataUrls.results);
+            } catch (e) {
+                console.log("No scan results found yet, using empty data");
             }
+            
+            // Try to get the last update time
+            let updateTime = new Date().toISOString();
+            try {
+                const updateResponse = await fetch(`${this.dataUrls.update}?${this.cacheBuster}`);
+                if (updateResponse.ok) {
+                    updateTime = await updateResponse.text();
+                }
+            } catch (e) {
+                console.log("Could not load update time");
+            }
+            
+            this.scanData = data;
+            this.updateLastUpdated(updateTime);
+            this.displayResults();
+        } catch (error) {
+            console.error('Data loading failed:', error);
+            this.showError('Failed to load data. The scanner may not have run yet. Please try again later.');
+        } finally {
+            this.hideLoading();
         }
     }
 
     async refreshData() {
-        if (this.isLoading) return;
-        
         try {
-            this.isLoading = true;
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
-            this.elements.refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
             
-            console.log("Manual refresh initiated...");
+            // Force fresh reload by using new cache buster
+            this.cacheBuster = `force_refresh=${Date.now()}`;
             
-            // Force fresh data with aggressive cache busting
-            const timestamp = Date.now();
+            // Fetch the latest data
             const [data, update] = await Promise.all([
-                this.fetchWithRetry(`${this.dataUrls.results}?force_refresh=${timestamp}`),
-                this.fetchWithRetry(`${this.dataUrls.update}?force_refresh=${timestamp}`)
+                this.fetchWithRetry(this.dataUrls.results),
+                fetch(`${this.dataUrls.update}?${this.cacheBuster}`).then(r => r.ok ? r.text() : new Date().toISOString())
             ]);
             
             this.scanData = data;
             this.updateLastUpdated(update);
             this.displayResults();
             
-            // Show success feedback
-            this.showToast('Data refreshed successfully!', 'success');
-            console.log("Manual refresh completed successfully");
-            
+            // Show success toast
+            const toast = new bootstrap.Toast(this.elements.toast);
+            toast.show();
         } catch (error) {
             console.error('Refresh failed:', error);
             this.showError('Refresh failed. Please try again.');
-            this.showToast('Refresh failed!', 'error');
         } finally {
-            this.isLoading = false;
             this.elements.refreshBtn.disabled = false;
-            this.elements.refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
             this.hideLoading();
-        }
-    }
-
-    async checkForUpdates() {
-        try {
-            const response = await fetch(`${this.dataUrls.update}?t=${Date.now()}`, {
-                cache: 'no-cache'
-            });
-            
-            if (response.ok) {
-                const lastUpdate = await response.text();
-                const currentUpdate = this.elements.lastUpdate.textContent;
-                
-                if (lastUpdate !== currentUpdate) {
-                    console.log("New data available, auto-refreshing...");
-                    this.refreshData();
-                }
-            }
-        } catch (error) {
-            console.log("Auto-update check failed:", error);
         }
     }
 
     displayResults() {
         if (!this.scanData || this.scanData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    No cryptocurrencies match the current criteria. 
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No cryptocurrencies match the current criteria or data is still loading. 
+                    The scanner runs every 10 minutes. 
                     <button class="btn btn-sm btn-outline-primary ms-2" onclick="dashboard.refreshData()">
                         <i class="fas fa-sync-alt"></i> Check Again
                     </button>
@@ -173,11 +133,7 @@ class CryptoDashboard {
         if (filteredData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    No results match the selected filter. 
-                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.elements.filterSelect.value='all'; dashboard.displayResults()">
-                        Show All Results
-                    </button>
+                    No results match the selected filter. Try adjusting filters or check back later.
                 </div>
             `;
             return;
@@ -226,8 +182,8 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko Page">
-                        <i class="fas fa-coins"></i>
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
+                        <i class="fas fa-external-link-alt"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
                             onclick="dashboard.showDetails('${item.id}')"
@@ -339,7 +295,7 @@ class CryptoDashboard {
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-coins"></i> CoinGecko Page
+                                <i class="fas fa-external-link-alt"></i> CoinGecko
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -371,20 +327,18 @@ class CryptoDashboard {
     }
 
     showLoading() {
-        this.isLoading = true;
         this.elements.loadingIndicator.style.display = 'block';
         this.elements.resultsContainer.innerHTML = `
             <div class="text-center py-4">
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
-                <p class="mt-2">Loading live market data...</p>
+                <p class="mt-2">Loading market data...</p>
             </div>
         `;
     }
 
     hideLoading() {
-        this.isLoading = false;
         this.elements.loadingIndicator.style.display = 'none';
     }
 
@@ -399,25 +353,9 @@ class CryptoDashboard {
             </div>
         `;
     }
-
-    showToast(message, type = 'success') {
-        const toast = document.createElement('div');
-        toast.className = `toast show ${type}`;
-        toast.innerHTML = `
-            <div class="toast-body">
-                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>
-                ${message}
-            </div>
-        `;
-        document.body.appendChild(toast);
-        
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
-    }
 }
 
-// Initialize dashboard immediately
+// Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new CryptoDashboard();
 });
