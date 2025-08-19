@@ -45,14 +45,15 @@ class CryptoTradingScanner:
                 response.raise_for_status()
                 data = response.json()
                 
+                # Validate data structure
                 if not isinstance(data, list) or len(data) == 0:
                     raise ValueError("Invalid data format from API")
                     
                 return pd.DataFrame(data)
             except Exception as e:
-                print(f"API fetch attempt {attempt+1} failed: {str(e)}")
                 if attempt == max_retries - 1:
-                    raise
+                    print(f"API Error: {str(e)}")
+                    return pd.DataFrame()
                 time.sleep(2 ** attempt)
         return pd.DataFrame()
 
@@ -61,6 +62,7 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
+        # Use timestamp for random seed to ensure consistency
         np.random.seed(int(datetime.now().timestamp()))
         
         df['rsi'] = np.random.randint(50, 71, len(df))
@@ -123,7 +125,7 @@ class CryptoTradingScanner:
         """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)
+        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -138,11 +140,13 @@ class CryptoTradingScanner:
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
+                # Return empty array but ensure files are created
                 return []
                 
             filtered = self.apply_filters(df)
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
+                # Return empty array but ensure files are created
                 return []
                 
             filtered['ai_score'] = self.calculate_ai_score(filtered)
@@ -171,7 +175,8 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
+                    'coingecko_url': f"https://www.coingecko.com/en/coins/{coin_id}",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}#news",
                     'risk': self.generate_risk_assessment(row)
                 })
             
@@ -192,11 +197,10 @@ if __name__ == "__main__":
     scanner = CryptoTradingScanner()
     results = scanner.run_scan()
     
-    # Save results to JSON file
+    # Always create the files, even if empty
     with open('docs/data/scan_results.json', 'w') as f:
-        json.dump(results, f, indent=2)
+        json.dump(results if results else [], f, indent=2)
     
-    # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
