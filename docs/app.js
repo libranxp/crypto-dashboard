@@ -2,7 +2,8 @@ class CryptoDashboard {
     constructor() {
         this.dataUrls = {
             results: 'data/scan_results.json',
-            update: 'data/last_update.txt'
+            update: 'data/last_update.txt',
+            status: 'data/status.json'
         };
         this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
@@ -32,21 +33,11 @@ class CryptoDashboard {
         for (let i = 0; i < retries; i++) {
             try {
                 const response = await fetch(url, options);
-                if (!response.ok) {
-                    if (response.status === 404 && i === retries - 1) {
-                        // If file doesn't exist, return empty array
-                        return [];
-                    }
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 return await response.json();
             } catch (error) {
-                if (i === retries - 1) {
-                    if (error.message.includes('404')) {
-                        return []; // Return empty array for 404 errors
-                    }
-                    throw error;
-                }
+                console.error(`Fetch attempt ${i + 1} failed for ${url}:`, error);
+                if (i === retries - 1) throw error;
                 await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
             }
         }
@@ -56,17 +47,24 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
+            // First try to load the status to see if data exists
+            try {
+                await this.fetchWithRetry(`${this.dataUrls.status}?${this.cacheBuster}`);
+            } catch (e) {
+                console.log("Status file not found, proceeding with data load");
+            }
+            
             const [data, update] = await Promise.all([
                 this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
                 this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
             ]);
             
-            this.scanData = Array.isArray(data) ? data : [];
+            this.scanData = data;
             this.updateLastUpdated(update);
             this.displayResults();
         } catch (error) {
             console.error('Data loading failed:', error);
-            this.showError('Failed to load data. The scanner may not have run yet. Please try refreshing.');
+            this.showError('Failed to load data. The scanner may not have run yet. Please try again later.');
         } finally {
             this.hideLoading();
         }
@@ -82,10 +80,8 @@ class CryptoDashboard {
             await this.loadData();
             
             // Show success toast
-            if (this.elements.toast) {
-                const toast = new bootstrap.Toast(this.elements.toast);
-                toast.show();
-            }
+            const toast = new bootstrap.Toast(this.elements.toast);
+            toast.show();
         } catch (error) {
             console.error('Refresh failed:', error);
             this.showError('Refresh failed. Please try again.');
@@ -98,11 +94,11 @@ class CryptoDashboard {
     displayResults() {
         if (!this.scanData || this.scanData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
-                <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
-                    No cryptocurrencies match the current criteria or scanner hasn't run yet. 
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    No cryptocurrencies match the current criteria. The scanner may need to run or the market may be quiet.
                     <button class="btn btn-sm btn-outline-primary ms-2" onclick="dashboard.refreshData()">
-                        <i class="fas fa-sync-alt"></i> Check Again
+                        <i class="fas fa-sync-alt"></i> Try Again
                     </button>
                 </div>
             `;
@@ -121,6 +117,7 @@ class CryptoDashboard {
         if (filteredData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
                     No results match the selected filter. Try adjusting filters or check back later.
                 </div>
             `;
@@ -170,10 +167,10 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.coingecko_url}" target="_blank" class="btn btn-sm btn-outline-warning" title="CoinGecko">
+                    <a href="${item.coingecko_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
                         <i class="fas fa-coins"></i>
                     </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="News">
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-warning" title="News">
                         <i class="fas fa-newspaper"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
@@ -285,11 +282,11 @@ class CryptoDashboard {
                             <a href="${coin.tradingview_url}" target="_blank" class="btn btn-primary">
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
-                            <a href="${coin.coingecko_url}" target="_blank" class="btn btn-warning">
+                            <a href="${coin.coingecko_url}" target="_blank" class="btn btn-info">
                                 <i class="fas fa-coins"></i> CoinGecko
                             </a>
-                            <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-newspaper"></i> Latest News
+                            <a href="${coin.news_url}" target="_blank" class="btn btn-warning">
+                                <i class="fas fa-newspaper"></i> News
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -321,9 +318,7 @@ class CryptoDashboard {
     }
 
     showLoading() {
-        if (this.elements.loadingIndicator) {
-            this.elements.loadingIndicator.style.display = 'block';
-        }
+        this.elements.loadingIndicator.style.display = 'block';
         this.elements.resultsContainer.innerHTML = `
             <div class="text-center py-4">
                 <div class="spinner-border text-primary" role="status">
@@ -335,9 +330,7 @@ class CryptoDashboard {
     }
 
     hideLoading() {
-        if (this.elements.loadingIndicator) {
-            this.elements.loadingIndicator.style.display = 'none';
-        }
+        this.elements.loadingIndicator.style.display = 'none';
     }
 
     showError(message) {
@@ -356,18 +349,4 @@ class CryptoDashboard {
 // Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new CryptoDashboard();
-    
-    // Add refresh button to the page if it doesn't exist in the HTML
-    if (!document.getElementById('refresh-btn')) {
-        const refreshBtn = document.createElement('button');
-        refreshBtn.id = 'refresh-btn';
-        refreshBtn.className = 'btn btn-primary';
-        refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
-        refreshBtn.onclick = () => window.dashboard.refreshData();
-        
-        const header = document.querySelector('.header');
-        if (header) {
-            header.appendChild(refreshBtn);
-        }
-    }
 });
