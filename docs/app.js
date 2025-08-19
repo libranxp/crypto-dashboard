@@ -6,8 +6,6 @@ class CryptoDashboard {
         };
         this.cacheBuster = `t=${Date.now()}`;
         this.scanData = null;
-        this.scanCount = 0;
-        this.alertCount = 0;
         
         this.initElements();
         this.initEventListeners();
@@ -21,37 +19,34 @@ class CryptoDashboard {
             filterSelect: document.getElementById('filter-select'),
             refreshBtn: document.getElementById('refresh-btn'),
             loadingIndicator: document.getElementById('loading-indicator'),
-            toast: document.getElementById('refresh-toast'),
-            totalScans: document.getElementById('total-scans'),
-            totalAlerts: document.getElementById('total-alerts'),
-            successRate: document.getElementById('success-rate')
+            toast: document.getElementById('refresh-toast')
         };
     }
 
     initEventListeners() {
         this.elements.refreshBtn.addEventListener('click', () => this.refreshData());
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
-        
-        // Add event listener for page refresh
-        window.addEventListener('beforeunload', () => {
-            localStorage.setItem('lastRefresh', Date.now());
-        });
-        
-        // Check if we need to refresh on page load
-        const lastRefresh = localStorage.getItem('lastRefresh');
-        if (lastRefresh && (Date.now() - lastRefresh) > 30000) { // 30 seconds
-            this.refreshData();
-        }
     }
 
     async fetchWithRetry(url, options = {}, retries = 3) {
         for (let i = 0; i < retries; i++) {
             try {
-                const response = await fetch(`${url}?${this.cacheBuster}`, options);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    if (response.status === 404 && i === retries - 1) {
+                        // If file doesn't exist, return empty array
+                        return [];
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 return await response.json();
             } catch (error) {
-                if (i === retries - 1) throw error;
+                if (i === retries - 1) {
+                    if (error.message.includes('404')) {
+                        return []; // Return empty array for 404 errors
+                    }
+                    throw error;
+                }
                 await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
             }
         }
@@ -61,26 +56,17 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            const [data, update] = await Promise.allSettled([
-                this.fetchWithRetry(this.dataUrls.results),
-                this.fetchWithRetry(this.dataUrls.update)
+            const [data, update] = await Promise.all([
+                this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
+                this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
             ]);
             
-            if (data.status === 'fulfilled') {
-                this.scanData = data.value;
-                this.scanCount++;
-                this.alertCount += this.scanData.length;
-                this.updatePerformanceMetrics();
-            }
-            
-            if (update.status === 'fulfilled') {
-                this.updateLastUpdated(update.value);
-            }
-            
+            this.scanData = Array.isArray(data) ? data : [];
+            this.updateLastUpdated(update);
             this.displayResults();
         } catch (error) {
             console.error('Data loading failed:', error);
-            this.showError('Failed to load data. Please try again later.');
+            this.showError('Failed to load data. The scanner may not have run yet. Please try refreshing.');
         } finally {
             this.hideLoading();
         }
@@ -91,30 +77,15 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh data by using new cache buster
+            // Force fresh reload by using new cache buster
             this.cacheBuster = `force_refresh=${Date.now()}`;
-            
-            const [data, update] = await Promise.allSettled([
-                this.fetchWithRetry(this.dataUrls.results),
-                this.fetchWithRetry(this.dataUrls.update)
-            ]);
-            
-            if (data.status === 'fulfilled') {
-                this.scanData = data.value;
-                this.scanCount++;
-                this.alertCount += this.scanData.length;
-                this.updatePerformanceMetrics();
-            }
-            
-            if (update.status === 'fulfilled') {
-                this.updateLastUpdated(update.value);
-            }
-            
-            this.displayResults();
+            await this.loadData();
             
             // Show success toast
-            const toast = new bootstrap.Toast(this.elements.toast);
-            toast.show();
+            if (this.elements.toast) {
+                const toast = new bootstrap.Toast(this.elements.toast);
+                toast.show();
+            }
         } catch (error) {
             console.error('Refresh failed:', error);
             this.showError('Refresh failed. Please try again.');
@@ -124,22 +95,15 @@ class CryptoDashboard {
         }
     }
 
-    updatePerformanceMetrics() {
-        this.elements.totalScans.textContent = this.scanCount;
-        this.elements.totalAlerts.textContent = this.alertCount;
-        
-        const successRate = this.scanCount > 0 
-            ? Math.round((this.alertCount / this.scanCount) * 100) 
-            : 0;
-        this.elements.successRate.textContent = `${successRate}%`;
-    }
-
     displayResults() {
         if (!this.scanData || this.scanData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle me-2"></i>
-                    No cryptocurrencies match the current criteria. The market may be quiet now.
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No cryptocurrencies match the current criteria or scanner hasn't run yet. 
+                    <button class="btn btn-sm btn-outline-primary ms-2" onclick="dashboard.refreshData()">
+                        <i class="fas fa-sync-alt"></i> Check Again
+                    </button>
                 </div>
             `;
             return;
@@ -157,7 +121,6 @@ class CryptoDashboard {
         if (filteredData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-info">
-                    <i class="fas fa-info-circle me-2"></i>
                     No results match the selected filter. Try adjusting filters or check back later.
                 </div>
             `;
@@ -207,8 +170,11 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
-                        <i class="fas fa-external-link-alt"></i>
+                    <a href="${item.coingecko_url}" target="_blank" class="btn btn-sm btn-outline-warning" title="CoinGecko">
+                        <i class="fas fa-coins"></i>
+                    </a>
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="News">
+                        <i class="fas fa-newspaper"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
                             onclick="dashboard.showDetails('${item.id}')"
@@ -319,8 +285,11 @@ class CryptoDashboard {
                             <a href="${coin.tradingview_url}" target="_blank" class="btn btn-primary">
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
+                            <a href="${coin.coingecko_url}" target="_blank" class="btn btn-warning">
+                                <i class="fas fa-coins"></i> CoinGecko
+                            </a>
                             <a href="${coin.news_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-external-link-alt"></i> CoinGecko
+                                <i class="fas fa-newspaper"></i> Latest News
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -352,11 +321,23 @@ class CryptoDashboard {
     }
 
     showLoading() {
-        this.elements.loadingIndicator.style.display = 'flex';
+        if (this.elements.loadingIndicator) {
+            this.elements.loadingIndicator.style.display = 'block';
+        }
+        this.elements.resultsContainer.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Loading market data...</p>
+            </div>
+        `;
     }
 
     hideLoading() {
-        this.elements.loadingIndicator.style.display = 'none';
+        if (this.elements.loadingIndicator) {
+            this.elements.loadingIndicator.style.display = 'none';
+        }
     }
 
     showError(message) {
@@ -375,4 +356,18 @@ class CryptoDashboard {
 // Initialize dashboard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new CryptoDashboard();
+    
+    // Add refresh button to the page if it doesn't exist in the HTML
+    if (!document.getElementById('refresh-btn')) {
+        const refreshBtn = document.createElement('button');
+        refreshBtn.id = 'refresh-btn';
+        refreshBtn.className = 'btn btn-primary';
+        refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh Data';
+        refreshBtn.onclick = () => window.dashboard.refreshData();
+        
+        const header = document.querySelector('.header');
+        if (header) {
+            header.appendChild(refreshBtn);
+        }
+    }
 });
