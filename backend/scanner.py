@@ -40,7 +40,7 @@ class CryptoTradingScanner:
                         'sparkline': False,
                         'price_change_percentage': '24h'
                     },
-                    timeout=20
+                    timeout=15
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -51,7 +51,7 @@ class CryptoTradingScanner:
                     
                 return pd.DataFrame(data)
             except Exception as e:
-                print(f"API fetch attempt {attempt + 1} failed: {str(e)}")
+                print(f"API fetch attempt {attempt+1} failed: {str(e)}")
                 if attempt == max_retries - 1:
                     raise
                 time.sleep(2 ** attempt)
@@ -137,19 +137,20 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
-            print("Starting scan...")
+            print("Fetching data from CoinGecko API...")
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
                 return []
                 
-            print(f"Fetched {len(df)} coins from API")
+            print(f"Received {len(df)} coins from API")
             filtered = self.apply_filters(df)
+            print(f"After filtering: {len(filtered)} coins")
+            
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
                 return []
                 
-            print(f"{len(filtered)} coins passed filters")
             filtered['ai_score'] = self.calculate_ai_score(filtered)
             filtered['timestamp'] = datetime.utcnow().isoformat()
             
@@ -180,7 +181,6 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed. Found {len(results)} matching assets.")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
@@ -206,10 +206,4 @@ if __name__ == "__main__":
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    # Create a simple status file for debugging
-    with open('docs/data/status.json', 'w') as f:
-        json.dump({
-            'last_run': datetime.utcnow().isoformat(),
-            'assets_found': len(results),
-            'status': 'success' if results else 'no_data'
-        }, f, indent=2)
+    print(f"Scan completed. Found {len(results)} matching assets.")
