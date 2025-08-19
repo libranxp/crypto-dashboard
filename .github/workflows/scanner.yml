@@ -13,7 +13,6 @@ permissions:
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     
     steps:
       - uses: actions/checkout@v4
@@ -28,17 +27,15 @@ jobs:
       - name: Create data directories
         run: |
           mkdir -p docs/data
-          mkdir -p backend
+          echo "[]" > docs/data/scan_results.json  # Initialize with empty array
 
       - name: Install dependencies
         working-directory: ./backend
-        run: |
-          pip install requests pandas numpy
+        run: pip install -r requirements.txt
 
-      - name: Run scanner with timeout protection
+      - name: Run scanner
         working-directory: ./backend
-        run: |
-          timeout 300 python scanner.py || echo "Scanner timed out but continuing..."
+        run: python scanner.py
 
       - name: Commit and push changes
         run: |
