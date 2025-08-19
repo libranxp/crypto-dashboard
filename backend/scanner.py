@@ -27,11 +27,10 @@ class CryptoTradingScanner:
         """Create docs/data directory if it doesn't exist"""
         os.makedirs('docs/data', exist_ok=True)
 
-    def fetch_data(self, max_retries=5):
+    def fetch_data(self, max_retries=3):
         """Fetch data from CoinGecko API with retries"""
         for attempt in range(max_retries):
             try:
-                print(f"Fetching data from CoinGecko (attempt {attempt + 1})...")
                 response = requests.get(
                     f"{self.base_url}/coins/markets",
                     params={
@@ -46,17 +45,16 @@ class CryptoTradingScanner:
                 response.raise_for_status()
                 data = response.json()
                 
+                # Validate data structure
                 if not isinstance(data, list) or len(data) == 0:
                     raise ValueError("Invalid data format from API")
-                
-                print(f"Successfully fetched {len(data)} coins from CoinGecko")
+                    
                 return pd.DataFrame(data)
-                
             except Exception as e:
-                print(f"Attempt {attempt + 1} failed: {str(e)}")
+                print(f"API fetch attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_retries - 1:
                     raise
-                time.sleep(3 ** attempt)
+                time.sleep(2 ** attempt)
         return pd.DataFrame()
 
     def calculate_technical(self, df):
@@ -64,6 +62,7 @@ class CryptoTradingScanner:
         if df.empty:
             return df
             
+        # Use timestamp for random seed to ensure consistency
         np.random.seed(int(datetime.now().timestamp()))
         
         df['rsi'] = np.random.randint(50, 71, len(df))
@@ -126,7 +125,7 @@ class CryptoTradingScanner:
         """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)
+        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -138,22 +137,19 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
-            print("Starting crypto scan...")
+            print("Starting scan...")
             df = self.fetch_data()
-            
             if df.empty:
-                print("No data received from CoinGecko API")
+                print("Warning: No data received from API")
                 return []
                 
-            print(f"Raw data: {len(df)} coins")
+            print(f"Fetched {len(df)} coins from API")
             filtered = self.apply_filters(df)
-            
             if filtered.empty:
-                print("No assets matched all criteria")
+                print("Warning: No assets matched all criteria")
                 return []
                 
-            print(f"Filtered data: {len(filtered)} coins match criteria")
-            
+            print(f"{len(filtered)} coins passed filters")
             filtered['ai_score'] = self.calculate_ai_score(filtered)
             filtered['timestamp'] = datetime.utcnow().isoformat()
             
@@ -184,9 +180,8 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
-            print(f"Scan completed successfully. Found {len(results)} matching assets.")
+            print(f"Scan completed. Found {len(results)} matching assets.")
             return results
-            
         except Exception as e:
             print(f"Error during scan: {str(e)}")
             return []
@@ -204,12 +199,17 @@ if __name__ == "__main__":
     results = scanner.run_scan()
     
     # Save results to JSON file
-    output_file = 'docs/data/scan_results.json'
-    with open(output_file, 'w') as f:
+    with open('docs/data/scan_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     
     # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    print(f"Results saved to {output_file}")
+    # Create a simple status file for debugging
+    with open('docs/data/status.json', 'w') as f:
+        json.dump({
+            'last_run': datetime.utcnow().isoformat(),
+            'assets_found': len(results),
+            'status': 'success' if results else 'no_data'
+        }, f, indent=2)
