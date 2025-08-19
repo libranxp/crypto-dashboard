@@ -51,9 +51,9 @@ class CryptoTradingScanner:
                     
                 return pd.DataFrame(data)
             except Exception as e:
+                print(f"API fetch attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_retries - 1:
-                    print(f"API Error: {str(e)}")
-                    return pd.DataFrame()
+                    raise
                 time.sleep(2 ** attempt)
         return pd.DataFrame()
 
@@ -137,18 +137,19 @@ class CryptoTradingScanner:
     def run_scan(self):
         """Execute full scanning process"""
         try:
+            print("Starting scan...")
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
-                # Return empty array but ensure files are created
                 return []
                 
+            print(f"Fetched {len(df)} coins from API")
             filtered = self.apply_filters(df)
             if filtered.empty:
                 print("Warning: No assets matched all criteria")
-                # Return empty array but ensure files are created
                 return []
                 
+            print(f"{len(filtered)} coins passed filters")
             filtered['ai_score'] = self.calculate_ai_score(filtered)
             filtered['timestamp'] = datetime.utcnow().isoformat()
             
@@ -180,6 +181,7 @@ class CryptoTradingScanner:
                     'risk': self.generate_risk_assessment(row)
                 })
             
+            print(f"Scan completed. Found {len(results)} matching assets.")
             return results
         except Exception as e:
             print(f"Error during scan: {str(e)}")
@@ -197,11 +199,18 @@ if __name__ == "__main__":
     scanner = CryptoTradingScanner()
     results = scanner.run_scan()
     
-    # Always create the files, even if empty
+    # Save results to JSON file
     with open('docs/data/scan_results.json', 'w') as f:
-        json.dump(results if results else [], f, indent=2)
+        json.dump(results, f, indent=2)
     
+    # Save last update time
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    print(f"Scan completed. Found {len(results)} matching assets.")
+    # Create a simple status file to verify the scan ran
+    with open('docs/data/status.json', 'w') as f:
+        json.dump({
+            'last_run': datetime.utcnow().isoformat(),
+            'assets_found': len(results),
+            'status': 'success'
+        }, f, indent=2)
