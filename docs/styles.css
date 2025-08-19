@@ -124,11 +124,11 @@ body {
     border-radius: 12px;
     font-weight: 600;
     font-size: 0.85rem;
+    color: white;
 }
 
 .score-badge.high {
     background-color: var(--high-score);
-    color: white;
 }
 
 .score-badge.medium {
@@ -138,12 +138,15 @@ body {
 
 .score-badge.low {
     background-color: var(--low-score);
-    color: white;
 }
 
 .action-cell {
     display: flex;
     gap: 5px;
+}
+
+.action-cell .btn {
+    padding: 0.25rem 0.5rem;
 }
 
 @media (max-width: 768px) {
