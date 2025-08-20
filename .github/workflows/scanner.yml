@@ -24,11 +24,8 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Create data directories
-        run: |
-          mkdir -p docs/data
-          echo "[]" > docs/data/scan_results.json  # Initialize with empty array
-          echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" > docs/data/last_update.txt
+      - name: Create data directory
+        run: mkdir -p docs/data
 
       - name: Install dependencies
         working-directory: ./backend
@@ -37,7 +34,6 @@ jobs:
       - name: Run scanner
         working-directory: ./backend
         run: python scanner.py
-        continue-on-error: true  # Continue even if scanner fails
 
       - name: Commit and push changes
         run: |
