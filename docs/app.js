@@ -45,25 +45,19 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // Load both data and update time
-            const [data, update] = await Promise.allSettled([
-                this.fetchWithRetry(`${this.dataUrls.results}?${this.cacheBuster}`),
-                this.fetchWithRetry(`${this.dataUrls.update}?${this.cacheBuster}`)
+            // Add cache busting to ensure fresh data
+            const cacheBuster = `t=${Date.now()}`;
+            const [data, update] = await Promise.all([
+                this.fetchWithRetry(`${this.dataUrls.results}?${cacheBuster}`),
+                this.fetchWithRetry(`${this.dataUrls.update}?${cacheBuster}`)
             ]);
             
-            if (data.status === 'fulfilled') {
-                this.scanData = data.value;
-                this.displayResults();
-            } else {
-                throw new Error('Failed to load scan results');
-            }
-            
-            if (update.status === 'fulfilled') {
-                this.updateLastUpdated(update.value);
-            }
+            this.scanData = data;
+            this.updateLastUpdated(update);
+            this.displayResults();
         } catch (error) {
             console.error('Data loading failed:', error);
-            this.showError('Failed to load data. The scanner may still be running. Please try again in a few moments.');
+            this.showError('Failed to load data. The scanner may be running. Please try again in a moment.');
         } finally {
             this.hideLoading();
         }
@@ -75,8 +69,15 @@ class CryptoDashboard {
             this.elements.refreshBtn.disabled = true;
             
             // Force fresh reload by using new cache buster
-            this.cacheBuster = `force_refresh=${Date.now()}`;
-            await this.loadData();
+            const cacheBuster = `force_refresh=${Date.now()}`;
+            const [data, update] = await Promise.all([
+                this.fetchWithRetry(`${this.dataUrls.results}?${cacheBuster}`),
+                this.fetchWithRetry(`${this.dataUrls.update}?${cacheBuster}`)
+            ]);
+            
+            this.scanData = data;
+            this.updateLastUpdated(update);
+            this.displayResults();
             
             // Show success toast
             const toast = new bootstrap.Toast(this.elements.toast);
@@ -93,11 +94,14 @@ class CryptoDashboard {
     displayResults() {
         if (!this.scanData || this.scanData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
-                <div class="alert alert-warning">
-                    No cryptocurrencies match the current criteria. The scanner may still be running or the market may be quiet.
-                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
-                        <i class="fas fa-sync-alt"></i> Try Again
-                    </button>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    No cryptocurrencies currently match all criteria. The scanner runs every 10 minutes.
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="dashboard.refreshData()">
+                            <i class="fas fa-sync-alt"></i> Check Again
+                        </button>
+                    </div>
                 </div>
             `;
             return;
@@ -164,11 +168,8 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.coingecko_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
-                        <i class="fas fa-coins"></i>
-                    </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-warning" title="News">
-                        <i class="fas fa-newspaper"></i>
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
+                        <i class="fas fa-external-link-alt"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
                             onclick="dashboard.showDetails('${item.id}')"
@@ -279,11 +280,8 @@ class CryptoDashboard {
                             <a href="${coin.tradingview_url}" target="_blank" class="btn btn-primary">
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
-                            <a href="${coin.coingecko_url}" target="_blank" class="btn btn-info">
-                                <i class="fas fa-coins"></i> CoinGecko
-                            </a>
-                            <a href="${coin.news_url}" target="_blank" class="btn btn-warning">
-                                <i class="fas fa-newspaper"></i> News
+                            <a href="${coin.news_url}" target="_blank" class="btn btn-info">
+                                <i class="fas fa-external-link-alt"></i> CoinGecko
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                         </div>
@@ -321,7 +319,7 @@ class CryptoDashboard {
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
-                <p class="mt-2">Loading market data...</p>
+                <p class="mt-2">Loading live market data...</p>
             </div>
         `;
     }
@@ -336,7 +334,7 @@ class CryptoDashboard {
                 <i class="fas fa-exclamation-triangle me-2"></i>
                 ${message}
                 <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
-                    <i class="fas fa-sync-alt"></i> Retry
+                    <i class="fas fa-sync-alt"></i> Try Again
                 </button>
             </div>
         `;
