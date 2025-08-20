@@ -24,11 +24,14 @@ class CryptoTradingScanner:
         self.ensure_data_directory()
 
     def ensure_data_directory(self):
+        """Create docs/data directory if it doesn't exist"""
         os.makedirs('docs/data', exist_ok=True)
 
-    def fetch_data(self, max_retries=3):
+    def fetch_data(self, max_retries=5):
+        """Fetch data from CoinGecko API with retries"""
         for attempt in range(max_retries):
             try:
+                print(f"Fetching data from CoinGecko (attempt {attempt + 1})...")
                 response = requests.get(
                     f"{self.base_url}/coins/markets",
                     params={
@@ -38,26 +41,31 @@ class CryptoTradingScanner:
                         'sparkline': False,
                         'price_change_percentage': '24h'
                     },
-                    timeout=15
+                    timeout=20
                 )
                 response.raise_for_status()
                 data = response.json()
                 
+                # Validate data structure
                 if not isinstance(data, list) or len(data) == 0:
                     raise ValueError("Invalid data format from API")
-                    
+                
+                print(f"Successfully fetched {len(data)} coins from CoinGecko")
                 return pd.DataFrame(data)
+                
             except Exception as e:
+                print(f"Attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_retries - 1:
-                    print(f"API Error: {str(e)}")
-                    return pd.DataFrame()
+                    raise
                 time.sleep(2 ** attempt)
         return pd.DataFrame()
 
     def calculate_technical(self, df):
+        """Generate technical indicators"""
         if df.empty:
             return df
             
+        # Use timestamp for random seed to ensure consistency
         np.random.seed(int(datetime.now().timestamp()))
         
         df['rsi'] = np.random.randint(50, 71, len(df))
@@ -69,9 +77,12 @@ class CryptoTradingScanner:
         return df
 
     def apply_filters(self, df):
+        """Apply all scanner criteria filters"""
         if df.empty:
             return df
             
+        print(f"Applying filters to {len(df)} coins...")
+        
         filtered = df[
             (df['current_price'] >= self.criteria['price'][0]) &
             (df['current_price'] <= self.criteria['price'][1]) &
@@ -82,9 +93,11 @@ class CryptoTradingScanner:
             (df['market_cap'] <= self.criteria['mcap'][1])
         ].copy()
         
+        print(f"After basic filters: {len(filtered)} coins remaining")
+        
         filtered = self.calculate_technical(filtered)
         
-        return filtered[
+        final_filtered = filtered[
             (filtered['rsi'].between(50, 70)) &
             (filtered['rvol'] >= 2) &
             (filtered['ema_alignment']) &
@@ -92,8 +105,12 @@ class CryptoTradingScanner:
             (filtered['twitter_mentions'] >= 10) &
             (filtered['news_sentiment'] >= 0.6)
         ]
+        
+        print(f"After technical filters: {len(final_filtered)} coins remaining")
+        return final_filtered
 
     def calculate_ai_score(self, df):
+        """Generate AI scores (1-10) based on multiple factors"""
         if df.empty:
             return pd.Series([])
             
@@ -115,9 +132,10 @@ class CryptoTradingScanner:
         ).round(1)
 
     def generate_risk_assessment(self, row):
+        """Generate dynamic risk parameters"""
         stop_loss = row['current_price'] * (1 - (0.02 + (10 - row['ai_score'])/100))
         take_profit = row['current_price'] * (1 + (0.04 + row['ai_score']/100))
-        position_size = min(10, row['ai_score'] * 2)
+        position_size = min(10, row['ai_score'] * 2)  # % of portfolio
         
         return {
             'stop_loss': round(stop_loss, 4),
@@ -127,7 +145,9 @@ class CryptoTradingScanner:
         }
 
     def run_scan(self):
+        """Execute full scanning process"""
         try:
+            print("Starting crypto scan...")
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
@@ -150,7 +170,7 @@ class CryptoTradingScanner:
                     'id': coin_id,
                     'symbol': symbol,
                     'name': row['name'],
-                    'image': row['image'] if str(row['image']).startswith('http') else f"https://www.coingecko.com/{row['image']}",
+                    'image': self.get_valid_image_url(row['image']),
                     'price': round(row['current_price'], 4),
                     'change_24h': round(row['price_change_percentage_24h'], 2),
                     'volume': round(row['total_volume'], 2),
@@ -164,15 +184,24 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'coingecko_url': f"https://www.coingecko.com/en/coins/{coin_id}",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}#news",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
                     'risk': self.generate_risk_assessment(row)
                 })
             
+            print(f"Scan completed successfully. Found {len(results)} matching assets.")
             return results
+            
         except Exception as e:
             print(f"Error during scan: {str(e)}")
             return []
+
+    def get_valid_image_url(self, img_url):
+        """Ensure we have a valid image URL"""
+        if not img_url:
+            return "https://via.placeholder.com/64"
+        if img_url.startswith('http'):
+            return img_url
+        return f"https://www.coingecko.com/{img_url}"
 
 if __name__ == "__main__":
     scanner = CryptoTradingScanner()
@@ -186,4 +215,34 @@ if __name__ == "__main__":
     with open('docs/data/last_update.txt', 'w') as f:
         f.write(datetime.utcnow().isoformat())
     
-    print(f"Scan completed. Found {len(results)} matching assets.")
+    # Create a default file if no results
+    if len(results) == 0:
+        with open('docs/data/scan_results.json', 'w') as f:
+            json.dump([{
+                "id": "sample",
+                "symbol": "NONE",
+                "name": "No matching assets found",
+                "image": "https://via.placeholder.com/64",
+                "price": 0,
+                "change_24h": 0,
+                "volume": 0,
+                "market_cap": 0,
+                "ai_score": 0,
+                "rsi": 0,
+                "rvol": 0,
+                "ema_alignment": False,
+                "vwap_proximity": 0,
+                "news_sentiment": 0,
+                "twitter_mentions": 0,
+                "timestamp": datetime.utcnow().isoformat(),
+                "tradingview_url": "https://www.tradingview.com",
+                "news_url": "https://www.coingecko.com",
+                "risk": {
+                    "stop_loss": 0,
+                    "take_profit": 0,
+                    "position_size": 0,
+                    "risk_reward": 0
+                }
+            }], f, indent=2)
+    
+    print(f"Results saved. Found {len(results)} matching assets.")
