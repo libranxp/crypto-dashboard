@@ -17,7 +17,6 @@ class CryptoDashboard {
             resultsContainer: document.getElementById('results-container'),
             filterSelect: document.getElementById('filter-select'),
             refreshBtn: document.getElementById('refresh-btn'),
-            loadingIndicator: document.getElementById('loading-indicator'),
             toast: document.getElementById('refresh-toast')
         };
     }
@@ -27,16 +26,20 @@ class CryptoDashboard {
         this.elements.filterSelect.addEventListener('change', () => this.displayResults());
     }
 
-    async fetchData(url) {
-        try {
-            const response = await fetch(`${url}?t=${Date.now()}`);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+    async fetchWithRetry(url, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                // Add cache busting parameter to prevent caching
+                const cacheBuster = `t=${Date.now()}`;
+                const fullUrl = url.includes('?') ? `${url}&${cacheBuster}` : `${url}?${cacheBuster}`;
+                
+                const response = await fetch(fullUrl);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                if (i === retries - 1) throw error;
+                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
             }
-            return await response.json();
-        } catch (error) {
-            console.error(`Failed to fetch ${url}:`, error);
-            throw error;
         }
     }
 
@@ -44,22 +47,18 @@ class CryptoDashboard {
         try {
             this.showLoading();
             
-            // Load data with timeout
-            const dataPromise = this.fetchData(this.dataUrls.results);
-            const updatePromise = this.fetchData(this.dataUrls.update);
-            
+            // Try to load data with retries
             const [data, update] = await Promise.all([
-                dataPromise,
-                updatePromise
+                this.fetchWithRetry(this.dataUrls.results),
+                this.fetchWithRetry(this.dataUrls.update)
             ]);
             
             this.scanData = data;
             this.updateLastUpdated(update);
             this.displayResults();
-            
         } catch (error) {
             console.error('Data loading failed:', error);
-            this.showError('Failed to load data. Please try refreshing.');
+            this.showError('Failed to load data. The scanner may not have run yet or there may be a connection issue.');
         } finally {
             this.hideLoading();
         }
@@ -70,12 +69,19 @@ class CryptoDashboard {
             this.showLoading();
             this.elements.refreshBtn.disabled = true;
             
-            // Force fresh data by adding timestamp
-            await this.loadData();
+            // Force fresh data by using a new cache buster
+            const [data, update] = await Promise.all([
+                this.fetchWithRetry(this.dataUrls.results),
+                this.fetchWithRetry(this.dataUrls.update)
+            ]);
             
-            // Show success message
-            this.showToast('Data refreshed successfully!', 'success');
+            this.scanData = data;
+            this.updateLastUpdated(update);
+            this.displayResults();
             
+            // Show success toast
+            const toast = new bootstrap.Toast(this.elements.toast);
+            toast.show();
         } catch (error) {
             console.error('Refresh failed:', error);
             this.showError('Refresh failed. Please try again.');
@@ -89,7 +95,10 @@ class CryptoDashboard {
         if (!this.scanData || this.scanData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-warning">
-                    No cryptocurrencies available. Please try refreshing.
+                    No cryptocurrencies match the current criteria. The scanner may not have run yet or the market may be quiet.
+                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="dashboard.refreshData()">
+                        <i class="fas fa-sync-alt"></i> Try Again
+                    </button>
                 </div>
             `;
             return;
@@ -107,7 +116,7 @@ class CryptoDashboard {
         if (filteredData.length === 0) {
             this.elements.resultsContainer.innerHTML = `
                 <div class="alert alert-info">
-                    No results match the selected filter. Try adjusting filters.
+                    No results match the selected filter. Try adjusting filters or check back later.
                 </div>
             `;
             return;
@@ -156,10 +165,10 @@ class CryptoDashboard {
                     <a href="${item.tradingview_url}" target="_blank" class="btn btn-sm btn-outline-primary" title="TradingView">
                         <i class="fas fa-chart-line"></i>
                     </a>
-                    <a href="${item.coingecko_url}" target="_blank" class="btn btn-sm btn-outline-warning" title="CoinGecko">
+                    <a href="${item.coingecko_url}" target="_blank" class="btn btn-sm btn-outline-info" title="CoinGecko">
                         <i class="fas fa-coins"></i>
                     </a>
-                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-info" title="News">
+                    <a href="${item.news_url}" target="_blank" class="btn btn-sm btn-outline-warning" title="News">
                         <i class="fas fa-newspaper"></i>
                     </a>
                     <button class="btn btn-sm btn-outline-success" 
@@ -271,10 +280,10 @@ class CryptoDashboard {
                             <a href="${coin.tradingview_url}" target="_blank" class="btn btn-primary">
                                 <i class="fas fa-chart-line"></i> TradingView
                             </a>
-                            <a href="${coin.coingecko_url}" target="_blank" class="btn btn-warning">
+                            <a href="${coin.coingecko_url}" target="_blank" class="btn btn-info">
                                 <i class="fas fa-coins"></i> CoinGecko
                             </a>
-                            <a href="${coin.news_url}" target="_blank" class="btn btn-info">
+                            <a href="${coin.news_url}" target="_blank" class="btn btn-warning">
                                 <i class="fas fa-newspaper"></i> News
                             </a>
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -307,7 +316,6 @@ class CryptoDashboard {
     }
 
     showLoading() {
-        this.elements.loadingIndicator.style.display = 'block';
         this.elements.resultsContainer.innerHTML = `
             <div class="text-center py-4">
                 <div class="spinner-border text-primary" role="status">
@@ -319,7 +327,7 @@ class CryptoDashboard {
     }
 
     hideLoading() {
-        this.elements.loadingIndicator.style.display = 'none';
+        // Loading is hidden when we display results
     }
 
     showError(message) {
@@ -332,25 +340,6 @@ class CryptoDashboard {
                 </button>
             </div>
         `;
-    }
-
-    showToast(message, type = 'success') {
-        const toast = document.createElement('div');
-        toast.className = `toast align-items-center text-white bg-${type} border-0 position-fixed top-0 end-0 m-3`;
-        toast.innerHTML = `
-            <div class="d-flex">
-                <div class="toast-body">${message}</div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        `;
-        document.body.appendChild(toast);
-        
-        const bsToast = new bootstrap.Toast(toast);
-        bsToast.show();
-        
-        toast.addEventListener('hidden.bs.toast', () => {
-            toast.remove();
-        });
     }
 }
 
