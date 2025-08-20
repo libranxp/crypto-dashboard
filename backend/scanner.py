@@ -51,13 +51,9 @@ class CryptoTradingScanner:
                     
                 return pd.DataFrame(data)
             except Exception as e:
+                print(f"API fetch attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_retries - 1:
-                    print(f"API Error: {str(e)}")
-                    # Return empty but valid DataFrame structure
-                    return pd.DataFrame(columns=[
-                        'id', 'symbol', 'name', 'image', 'current_price',
-                        'price_change_percentage_24h', 'total_volume', 'market_cap'
-                    ])
+                    raise
                 time.sleep(2 ** attempt)
         return pd.DataFrame()
 
@@ -144,6 +140,7 @@ class CryptoTradingScanner:
             df = self.fetch_data()
             if df.empty:
                 print("Warning: No data received from API")
+                # Create sample empty response to prevent frontend errors
                 return []
                 
             filtered = self.apply_filters(df)
@@ -177,8 +174,7 @@ class CryptoTradingScanner:
                     'twitter_mentions': row['twitter_mentions'],
                     'timestamp': row['timestamp'],
                     'tradingview_url': f"https://www.tradingview.com/chart/?symbol={symbol}USD",
-                    'coingecko_url': f"https://www.coingecko.com/en/coins/{coin_id}",
-                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}#news",
+                    'news_url': f"https://www.coingecko.com/en/coins/{coin_id}",
                     'risk': self.generate_risk_assessment(row)
                 })
             
